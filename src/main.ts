@@ -34,7 +34,7 @@ program.command('generate')
     .argument('[version]', 'Version to use', config.isDevelopment() ? 'next' : 'latest')
     .option('-j, --json <file>', 'JSON schema file', 'generated/db-schema.json')
     .option('-t, --ts <file>', 'TS file', 'generated/db-cli.ts')
-    .action(async (v) => await db.generate(v))
+    .action(async (v) => await db.generate(v, program.opts().json, program.opts().ts))
 
 program.parse()
 
