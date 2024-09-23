@@ -1,0 +1,18 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+      "sourceMap": false,
+      "removeComments": true,
+      "importHelpers": true,
+      "alwaysStrict": true,
+      "forceConsistentCasingInFileNames": false,
+      "noFallthroughCasesInSwitch": false,
+      "noImplicitReturns": false,
+      "noUnusedLocals": false,
+      "noUnusedParameters": false,
+      "rootDir": "src",
+      "outDir": "dist/types",
+    },
+    "include": ["src/generator/lib/index.ts"],
+  }
+  

@@ -1,0 +1,28 @@
+{
+    "compilerOptions": {
+          "lib": [
+              "esnext"
+          ],
+      "moduleResolution": "node",
+      "module": "esnext",
+      "target": "esnext",
+      "ignoreDeprecations": "5.0",
+      "allowSyntheticDefaultImports": true,
+      "noImplicitAny": false,
+      "noImplicitThis": false,
+      "strictNullChecks": false,
+      "sourceMap": true,
+      "removeComments": true,
+      "importHelpers": true,
+      "alwaysStrict": true,
+      "forceConsistentCasingInFileNames": false,
+      "noFallthroughCasesInSwitch": false,
+      "noImplicitReturns": false,
+      "noUnusedLocals": false,
+      "noUnusedParameters": false,
+      "rootDir": "dist/out",
+      "outDir": "generated",
+    },
+    "include": ["dist/out/index.ts"]
+  }
+  
