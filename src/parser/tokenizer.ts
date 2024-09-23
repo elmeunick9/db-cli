@@ -29,7 +29,7 @@ export function tokenize(sql: string): Token[] {
             sep: sql.match(/^\,/),
             null_constraint: sql.match(/^NULL|^NOT NULL/),
             default: sql.match(/^DEFAULT/),
-            type: sql.match(/^(varchar(\ *\([0-9]+\))?|char(\ *\([0-9]+\))?|date|timestamptz|timestamp|integer|bigint|smallint|int2|int4|int8|int|float4|float8|float|real|double precision|timetz|time|text|uuid|boolean|numeric(\ *\([0-9\,]+\))?|decimal(\ *\([0-9\,]+\))?|money)/),
+            type: sql.match(/^(varchar(\ *\([0-9]+\))?|char(\ *\([0-9]+\))?|date|timestamptz|timestamp|integer|bigint|smallint|int2|int4|int8|int|float4|float8|float|real|double precision|timetz|time|text|uuid|boolean|numeric(\ *\(( *[0-9\,]+ *)+\))?|decimal(\ *\(( *[0-9\,]+ *)+\))?|money)/),
             value: sql.match(/^(now\(\)|[a-z0-9_]+\(\)|true|false|null|[0-9]+|\'(.*?)\')/),
             primary_key: sql.match(/^PRIMARY KEY/),
             foreign_key: sql.match(/^FOREIGN KEY/),

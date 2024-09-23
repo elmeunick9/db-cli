@@ -49,12 +49,12 @@ export function generateDBSchema(version = config.isDevelopment() ? 'next' : 'ap
     return parser.enhance(tree)
 }
 
-export function writeJSON(schema: DBSchema): void {
-    fs.mkdirSync("generated", { recursive: true })
-    fs.writeFileSync(`generated/db-schema.json`, JSON.stringify(schema, null, 2))
+export function writeJSON(schema: DBSchema, dest = "generated/db-schema.json"): void {
+    fs.mkdirSync(dest.split("/").slice(0, -1).join("/"), { recursive: true })
+    fs.writeFileSync(dest, JSON.stringify(schema, null, 2))
 }
 
-export function writeLibrary(schema: DBSchema): void {
+export function writeLibrary(schema: DBSchema, dest = "dist/out/index.ts"): void {
     const interfacesTextG = (schemaName: string): string => Object.keys(schema[schemaName].tables)
         .map(tableName => {
             const table = schema[schemaName].tables[tableName]
@@ -106,6 +106,6 @@ export const info = (): DBSchema => (${JSON.stringify(schema)})
 export default { api, info, ...lib }
 `
 
-    fs.mkdirSync("dist/out", { recursive: true })
-    fs.writeFileSync(`dist/out/index.ts`, indexContent)
+    fs.mkdirSync(dest.split("/").slice(0, -1).join("/"), { recursive: true })
+    fs.writeFileSync(dest, indexContent)
 }

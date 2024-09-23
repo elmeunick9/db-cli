@@ -32,6 +32,8 @@ program.command('generate')
     .summary('generates a TS library to access the DB.')
     .description(`Creates a data access layer for TypeScript and a JSON schema.`)
     .argument('[version]', 'Version to use', config.isDevelopment() ? 'next' : 'latest')
+    .option('-j, --json <file>', 'JSON schema file', 'generated/db-schema.json')
+    .option('-t, --ts <file>', 'TS file', 'generated/db-cli.ts')
     .action(async (v) => await db.generate(v))
 
 program.parse()

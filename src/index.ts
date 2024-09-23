@@ -97,11 +97,11 @@ export async function release(version: string): Promise<void> {
  * 
  * @param from Target version or alias.
  */
-export async function generate(version: string): Promise<void> {
+export async function generate(version: string, jsonDest?: string, tsDest?: string): Promise<void> {
     try {
         const schema = generateDBSchema(version)
-        writeJSON(schema)
-        writeLibrary(schema)
+        writeJSON(schema, jsonDest)
+        writeLibrary(schema, tsDest)
     } catch (e) {
         console.error(e)
         process.exit(1)
