@@ -104,7 +104,7 @@ export function parse(sql: string, options = { exhaustive: true }): ASTNode {
         return columnList(ast)
     }
 
-    function arithmeticExpression(ast: ASTNode, initialValue: number): number {
+    function arithmeticExpression(_: ASTNode, initialValue: number): number {
         if (isNaN(initialValue)) fail(next(), 'not a number')
 
         let value = initialValue

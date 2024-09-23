@@ -32,9 +32,8 @@
     "scripts": {
         "start": "node dist/cli.js",
         "clean": "rimraf coverage build tmp",
-        "postinstall": "pnpm run build:cli",
         "prebuild": "npm run lint && tsc -p tsconfig.json --noEmit",
-        "build": "pnpm run build:cli && pnpm run build:lib && pnpm run build:lib:types",
+        "build": "npm run build:cli && npm run build:lib && npm run build:lib:types",
         "build:cli": "esbuild --bundle src/main.ts                --format=esm --platform=node --outfile=dist/cli.js --packages=external",
         "build:lib": "esbuild --bundle src/generator/lib/index.ts --format=esm --platform=node --outfile=dist/lib.js --packages=external",
         "build:lib:types": "tsc --emitDeclarationOnly --declaration --project tsconfig.types.json",
@@ -55,5 +54,10 @@
     "repository": {
         "type": "git",
         "url": "https://github.com/elmeunick9/db-cli.git"
-    }
+    },
+    "files": [
+        "package.json",
+        "dist/",
+        "LICENSE"
+    ]
 }

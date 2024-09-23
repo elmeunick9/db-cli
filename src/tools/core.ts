@@ -140,7 +140,7 @@ export function findSQLSchemas(version: string, sorted = false, withPrefix = tru
  * @returns A list dependent schemas.
  */
 export function createSQLSchemaDependencyMap(version: string, withPrefix = true): Map<string, string[]> {
-    const getTablePath = (input: string, schemaName: string) => input.includes('.')
+    const getTablePath = (input: string, schemaName: string): { schemaName: string, tableName: string } => input.includes('.')
         ? { schemaName: unquote(input.split('.')[0]), tableName: unquote(input.split('.')[1]) }
         : { schemaName: schemaName, tableName: unquote(input) }
 

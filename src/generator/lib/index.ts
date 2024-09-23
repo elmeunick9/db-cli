@@ -1,7 +1,7 @@
 import config from "../../config"
 import * as clientLib from "../../client"
 import { DB_ERROR } from "../../errors"
-import { qb, format, BaseType, Clause, Expand, ExpandedColumnAlias  } from "./queryBuilder"
+import { qb, format, BaseType, Clause, Expand, ExpandedColumnAlias, ExpandedExpression  } from "./queryBuilder"
 export { type Clause, type BaseType } from "./queryBuilder";
 import oasLib from './oas'
 import * as stringUtils from '../../tools/string_utils'
@@ -41,7 +41,7 @@ export type kObject = {[key: string]: BaseType|undefined}
 export const generic = {
     list: async <K extends string, T>(schema: string, table: string, optionsP: Partial<ListOptions<K>> = {}, values: kObject = {}, db_schema: DBSchema|undefined): Promise<T[]> => {
         const options = { columns: [], orderBy: [], ...optionsP }
-        const join = (ex: Expand<K>, alias: string) => qb.expand(db_schema, schema, table, ex, alias, "")
+        const join = (ex: Expand<K>, alias: string): ExpandedExpression => qb.expand(db_schema, schema, table, ex, alias, "")
         const alias = (c: ExpandedColumnAlias): string => `${c.column} AS "${c.alias}"`
         const tn = (n = 4): string => ",\n" + "    ".repeat(n)
         const expanded = options.expand?.map((x, i) => join(x, `_join${i}`)) ?? []
@@ -102,8 +102,8 @@ export const generic = {
         if (response.rows.length > 1) throw new Error(DB_ERROR.CORRUPTED)
         return response.rows[0]
     },
-    readByKey: async <K, V, T extends string = string>(schema: string, table: string, key: K, options: ReadOptions<T>, db_schema: DBSchema|undefined ): Promise<V> => {
-        const join = (ex: Expand<T>, i: number) => qb.expand(db_schema, schema, table, ex, `_join${i}`, "")
+    readByKey: async <K, V, T extends string = string>(schema: string, table: string, key: K, options: ReadOptions<T> = {}, db_schema?: DBSchema ): Promise<V> => {
+        const join = (ex: Expand<T>, i: number): ExpandedExpression => qb.expand(db_schema, schema, table, ex, `_join${i}`, "")
         const alias = (c: ExpandedColumnAlias): string => `${c.column} AS "${c.alias}"`
         const expanded = options.expand?.map((x, i) => join(x, i)) ?? []
         const tn = (n = 4): string => ",\n" + "    ".repeat(n)

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { type PoolConfig, type QueryConfig, type QueryResult, type Pool, type QueryResultRow } from 'pg'
+import { type PoolConfig, type QueryConfig, type QueryResult, type Pool, type QueryConfigValues } from 'pg'
 
 import pg from 'pg'
 
@@ -48,7 +48,7 @@ export let client: Pool = null
 export const pools: Map<string, Pool> = new Map()
 
 class ClientWrapper extends PoolC {
-    query<R extends QueryResultRow = any, I extends any[] = any[]>(textOrConfig: string | QueryConfig<I>, values?: I): Promise<QueryResult<R>> {
+    query<R extends any[] = any[], I = any[]>(textOrConfig: string | QueryConfig<I>, values?: QueryConfigValues<I>): Promise<QueryResult<R>> {
         if (clientSQLConfig.printSQLQueries) console.log("SQL:", textOrConfig)
         if (clientSQLConfig.printSQLValues) console.log("SQL VALUES:", values)
         return super.query(textOrConfig, values);
