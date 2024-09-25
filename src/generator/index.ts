@@ -77,6 +77,8 @@ export function writeLibrary(schema: DBSchema, dest = "dist/out/index.ts"): void
     
     const indexContent =
 `
+/* eslint-disable @typescript-eslint/prefer-namespace-keyword */
+/* eslint-disable @typescript-eslint/no-namespace */
 import { type DBSchema } from "@hubbit86/db-cli/dist/types/parser/enhance"
 import lib, { type kObject, type ListOptions, type ReadOptions, type Options, type Clause } from "@hubbit86/db-cli"
 export * as lib from "@hubbit86/db-cli"
