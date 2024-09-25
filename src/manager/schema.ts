@@ -23,7 +23,7 @@ export async function createSchema(name = 'public', version = 'next'): Promise<v
     }
 
     for (const filepath of findSQLFiles({ version, schema: name, type: 'function', allowMultiple: true })) {
-        await executeSqlFile(filepath, client, [`SET SCHEMA '${prefixSchema(name)}';`])
+        await executeSqlFile(filepath, client, [`SET SCHEMA '${prefixSchema(name)}';`], [], false)
     }
 
     for (const filepath of findSQLFiles({ version, schema: name, type: 'insert' })) {
