@@ -93,7 +93,7 @@ export function buildApi(schema: string, table: TableSchemaEnhanced): string {
     const lPromiseReq   = `Promise<Required<${lSchema}>>`
 
     const lListImpl     = `lib.generic.list("${schema}", "${table.name}", options, values, _info)`
-    const lCreateImpl   = `lib.generic.createUsingDefaultKey("${schema}", "${table.name}", ${lEmptyKey}, values)`
+    const lCreateImpl   = `lib.generic.createUsingDefaultKey("${schema}", "${table.name}", ${lEmptyKey}, values) as unknown`
     const lReadImpl     = `lib.generic.readByKey("${schema}", "${table.name}", key, options, _info)`
     const lUpdateImpl   = `lib.generic.updateByKey("${schema}", "${table.name}", key, values, options)`
     const lIncrImpl     = `lib.generic.incrementByKey("${schema}", "${table.name}", key, values)`
