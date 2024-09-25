@@ -4,6 +4,7 @@ import { replaceSchemaName } from './string_utils'
 export interface SourceOptions {
     encoding?: 'utf8'|'utf16le'|'latin1'|'base64'|'base64url'|'hex'|'ascii'|'ucs2'|'ucs-2'
     type?: 'PATH'|'MEMORY'
+    split?: boolean
 }
 
 export interface CopyOptions {
@@ -25,7 +26,7 @@ export function loadSQLFile(file: string|Buffer, options: SourceOptions = {}, wi
         ? file.toString()
         : fs.readFileSync(file, { encoding: options.encoding ?? 'utf8' })
 
-    const p_data = data
+    const p_data = (options.split === false) ? [data] : data
         .replace(/(\r\n|\n|\r)/gm, '\n')
         .split(/(?=\n|--)/g)
         .filter(x => !x.startsWith('--'))

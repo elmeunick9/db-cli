@@ -1,6 +1,6 @@
 {
     "name": "@hubbit86/db-cli",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "description": "Not an Object Relational Mapper",
     "engines": {
         "node": ">= 18.12",
@@ -34,11 +34,12 @@
         "clean": "rimraf coverage build tmp",
         "prebuild": "npm run lint && tsc -p tsconfig.json --noEmit",
         "build": "npm run build:cli && npm run build:lib && npm run build:lib:types",
-        "build:cli": "esbuild --bundle src/main.ts                --format=esm --platform=node --outfile=dist/cli.js --packages=external",
-        "build:lib": "esbuild --bundle src/generator/lib/index.ts --format=esm --platform=node --outfile=dist/lib.js --packages=external",
+        "build:cli": "esbuild --bundle src/main.ts                --format=esm --platform=node --outfile=dist/cli.js",
+        "build:lib": "esbuild --bundle src/generator/lib/index.ts --format=esm --platform=node --outfile=dist/lib.js",
         "build:lib:types": "tsc --emitDeclarationOnly --declaration --project tsconfig.types.json",
         "lint": "eslint . --ext .ts --ext .mts",
-        "test": "jest --coverage",
+        "test": "jest",
+        "test:coverage": "jest --coverage",
         "prettier": "prettier --config .prettierrc --write .",
         "test:watch": "jest --watch"
     },
