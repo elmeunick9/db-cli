@@ -11,7 +11,7 @@ export async function createSchema(client: IClient, opts: InitOptions, name = 'p
     const roles = opts.db.roles
     const user = roles.api.user
 
-    if (name === "public") {
+    if (name === opts.db.publicSchema) {
         await client.query(`CREATE SCHEMA IF NOT EXISTS ${prefixSchema(name, opts.db.prefix)};`)
         //await client.query(`ALTER SCHEMA "${prefixSchema(name)}" OWNER TO ${user}`);
     }
@@ -45,19 +45,19 @@ export async function initializePublicSchema(client: IClient, opts: InitOptions,
     const state = { migration: migration_state }
 
     await client.query(
-        `CREATE TABLE "${prefixSchema("public")}"."meta" (
+        `CREATE TABLE "${prefixSchema(opts.db.publicSchema, opts.db.prefix)}"."meta" (
             "key"               varchar(8)          ,
             "value"             json                NOT NULL,
             PRIMARY KEY ("key")
         );`
     )
-    await client.query(`INSERT INTO "${prefixSchema("public")}"."meta" VALUES ('info' , '${JSON.stringify(info)}');`)
-    await client.query(`INSERT INTO "${prefixSchema("public")}"."meta" VALUES ('state' , '${JSON.stringify(state)}');`)
+    await client.query(`INSERT INTO "${prefixSchema(opts.db.publicSchema, opts.db.prefix)}"."meta" VALUES ('info' , '${JSON.stringify(info)}');`)
+    await client.query(`INSERT INTO "${prefixSchema(opts.db.publicSchema, opts.db.prefix)}"."meta" VALUES ('state' , '${JSON.stringify(state)}');`)
 }
 
 export async function initializeSchema(client: IClient, opts: InitOptions, schema: string, version: string): Promise<void> {
     client.connect({...opts.db.roles.sa})
-    if (schema === 'public' || schema === prefixSchema("public", opts.db.prefix)) {
+    if (schema === opts.db.publicSchema || schema === prefixSchema(opts.db.publicSchema, opts.db.prefix)) {
         await initializePublicSchema(client, opts, version)
     }
 

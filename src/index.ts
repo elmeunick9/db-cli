@@ -29,7 +29,10 @@ export async function init(client: IClient, options: Partial<InitOptions> = {}):
             description: '',
             source: '',
         },
-        ...options,
+        ...{
+            ...options,
+            db: { ...config.db, ...(options.db ?? {}) }
+        }
     }
     try {
         if (opts.clean) {
