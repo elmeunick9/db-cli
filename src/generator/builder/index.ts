@@ -95,7 +95,7 @@ export function buildApi(schema: string, table: TableSchemaEnhanced): string {
     const lListImpl     = `lib.generic.list(this.client, "${schema}", "${table.name}", options, values, _info)`
     const lCreateImpl   = `lib.generic.createUsingDefaultKey(this.client, "${schema}", "${table.name}", ${lEmptyKey}, values) as unknown`
     const lReadImpl     = `lib.generic.readByKey(this.client, "${schema}", "${table.name}", key, options, _info)`
-    const lUpdateImpl   = `lib.generic.updateByKey(this.client, "${schema}", "${table.name}", key, values, options)`
+    const lUpdateImpl   = `lib.generic.updateByKey(this.client, "${schema}", "${table.name}", key, values)`
     const lIncrImpl     = `lib.generic.incrementByKey(this.client, "${schema}", "${table.name}", key, values)`
     const lDeleteImpl   = `lib.generic.deleteByKey(this.client, "${schema}", "${table.name}", key)`
     const lDeleteAImpl  = `lib.generic.deleteByFilter(this.client, "${schema}", "${table.name}", filter, values)`
@@ -105,7 +105,7 @@ export function buildApi(schema: string, table: TableSchemaEnhanced): string {
     const listSign      = `async list(options: Partial<ListOptions<${lSchemaColumn}>> = {}, values: kObject = {}): ${lPromiseList} { return ${lListImpl} as ${lPromiseList} }`
     const createSign    = `async create(values: ${lSchemaData}): ${lPromiseKey} { return ${lCreateImpl} as ${lPromiseKey} }`
     const readSign      = `async read(key: ${lSchemaKey}, options: Partial<ReadOptions<${lSchemaColumn}>> = {}): ${lPromiseReq} { return ${lReadImpl} as ${lPromiseReq} }`
-    const updateSign    = `async update(key: ${lSchemaKey}, values: Partial<${lSchemaData}>, options: Options = {}): Promise<void> { return ${lUpdateImpl} }`
+    const updateSign    = `async update(key: ${lSchemaKey}, values: Partial<${lSchemaData}>): Promise<void> { return ${lUpdateImpl} }`
     const incrSign      = `async increment(key: ${lSchemaKey}, values: Partial<${lSchemaData}>): Promise<void> { return ${lIncrImpl} }`
     const deleteSign    = `async delete(key: ${lSchemaKey}): Promise<void> { return ${lDeleteImpl} }`
     const deleteASign   = `async deleteAll(filter: Clause<${lSchemaColumn}>, values: kObject = {}): Promise<void> { return ${lDeleteAImpl} }`

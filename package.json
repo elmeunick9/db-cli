@@ -1,12 +1,13 @@
 {
     "name": "@hubbit86/db-cli",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "description": "Not an Object Relational Mapper",
     "engines": {
         "node": ">= 18.12"
     },
     "main": "./dist/lib.mjs",
     "types": "./dist/types/index.d.ts",
+    "type": "module",
     "devDependencies": {
         "@types/jest": "~29.5",
         "@types/node": "~18",
