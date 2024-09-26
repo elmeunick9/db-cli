@@ -2,11 +2,13 @@ import config from './config'
 import manager from './manager'
 import tools from './tools/index.js'
 import { DB_ERROR } from './errors.js'
-import { DatabaseError } from 'pg'
 import { MetaInfo } from './manager/info.js'
 import fs from 'fs'
-import { generateDBSchema, writeJSON, writeLibrary } from './generator'
+import { generateDBSchema, writeJSON, WriteJsonOptions, writeLibrary, WriteLibraryOptions } from './generator'
 import * as stringUtils from './tools/string_utils';
+import { DatabaseError, IClient, InitOptions, MigrationOptions } from './interfaces'
+import * as lib from './generator/lib'
+export * as lib from './generator/lib'
 
 /**
  * Initializes the DB when on development mode. It will delete and recreate the DB
@@ -14,32 +16,47 @@ import * as stringUtils from './tools/string_utils';
  * 
  * @param from 
  */
-export async function init(from = config.isDevelopment() ? 'next' : 'latest'): Promise<void> {
+export async function init(client: IClient, options: Partial<InitOptions> = {}): Promise<void> {
+    const opts: InitOptions = {
+        development: config.isDevelopment(),
+        from: config.isDevelopment() ? 'next' : 'latest',
+        clean: config.isDevelopment(),
+        createUsers: true,
+        logger: console,
+        terminate: config.isDevelopment(),
+        db: config.db,
+        meta: {
+            description: '',
+            source: '',
+        },
+        ...options,
+    }
     try {
-        if (config.isDevelopment()) {
-            console.log("Cleaning DB.")
-            await manager.createCleanDB()
+        if (opts.clean) {
+            opts.logger.log("Cleaning DB.")
+            await manager.createCleanDB(client, opts)
         }
-        await manager.createUsers()
-        for (const schema of tools.findSQLSchemas(from, true)) {
-            await manager.createSchema(schema, from)
+        if (opts.createUsers) {
+            await manager.createUsers(client, opts)
         }
-        for (const schema of tools.findSQLSchemas(from, true)) {
-            await manager.initializeSchema(schema, from)
+        for (const schema of tools.findSQLSchemas(opts.from, true)) {
+            await manager.createSchema(client, opts, schema, opts.from)
+        }
+        for (const schema of tools.findSQLSchemas(opts.from, true)) {
+            await manager.initializeSchema(client, opts, schema, opts.from)
         }
         
-        const info = await manager.getMetaByKey('info') as MetaInfo
+        const info = await manager.getMetaByKey(client, opts, 'info') as MetaInfo
         if (!info.version) throw DB_ERROR.CORRUPTED
 
-        console.log("DB initialized.")
+        opts.logger.log("DB initialized.")
     } catch (e) {
         if ((e as DatabaseError).code === '42P04') {
-            console.error("DB already exists! Aborted.")
+            opts.logger.error("DB already exists! Aborted.")
         } else {
-            console.error(e)
-            console.info(JSON.stringify(e))
+            opts.logger.error(e)
+            opts.logger.info(JSON.stringify(e))
         }
-        process.exit(1)
     }
 }
 
@@ -47,23 +64,38 @@ export async function init(from = config.isDevelopment() ? 'next' : 'latest'): P
  * Migrates the DB to the version specified. 
  * @param from Target version or alias.
  */
-export async function migrate(to = config.isDevelopment() ? 'next' : 'latest'): Promise<void> {
+export async function migrate(client: IClient, options: Partial<MigrationOptions> = {}, to = config.isDevelopment() ? 'next' : 'latest'): Promise<void> {
+    const opts: MigrationOptions = {
+        development: config.isDevelopment(),
+        from: config.isDevelopment() ? 'next' : 'latest',
+        clean: config.isDevelopment(),
+        createUsers: true,
+        logger: console,
+        terminate: config.isDevelopment(),
+        db: config.db,
+        meta: {
+            description: '',
+            source: '',
+        },
+        to: config.isDevelopment() ? 'next' : 'latest',
+        ...options,
+    }
+
     try {
-        const info = await manager.getMetaByKey('info') as MetaInfo
+        const info = await manager.getMetaByKey(client, opts, 'info') as MetaInfo
         if (!info.version) throw DB_ERROR.CORRUPTED
     
         const plan = manager.createMigrationPlan(info.version, to)
         let current = info.version
         if (plan.length === 0) {
-            console.log("Already on last release, skipping migration.")
+            opts.logger.log("Already on last release, skipping migration.")
         }
         for (const step of plan) {
-            await manager.migrateStep(current, step)
+            await manager.migrateStep(client, opts, current, step)
             current = step
         }
     } catch (e) {
-        console.error(e)
-        process.exit(1)
+        opts.logger.error(e)
     }
 }
 
@@ -85,8 +117,12 @@ export async function release(version: string): Promise<void> {
         console.log("NEW DB VERSION:", version)
     } catch (e) {
         console.error(e)
-        process.exit(1)
     }
+}
+
+export interface GenerateOptions {
+    json: Partial<WriteJsonOptions>
+    ts: Partial<WriteLibraryOptions>
 }
 
 /**
@@ -97,16 +133,21 @@ export async function release(version: string): Promise<void> {
  * 
  * @param from Target version or alias.
  */
-export async function generate(version: string, jsonDest?: string, tsDest?: string): Promise<void> {
+export async function generate(version: string, options: Partial<GenerateOptions> = {}): Promise<void> {
+    const opts: GenerateOptions = {
+        json: {},
+        ts: {},
+        ...options
+    }
     try {
         const schema = generateDBSchema(version)
-        writeJSON(schema, jsonDest)
-        writeLibrary(schema, tsDest)
+        writeJSON(schema, opts.json)
+        writeLibrary(schema, opts.ts)
     } catch (e) {
         console.error(e)
-        process.exit(1)
     }
 }
 
+export * from './interfaces'
 export const string_utils = stringUtils
-export default { init, migrate, release, generate, string_utils }
+export default { init, migrate, release, generate, string_utils, config, tools, lib }

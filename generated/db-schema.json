@@ -1,0 +1,156 @@
+{
+  "public": {
+    "tables": {
+      "market": {
+        "type": "table",
+        "name": "market",
+        "columns": [
+          {
+            "name": "cname",
+            "type": "varchar(8)",
+            "isNullable": false,
+            "hasDefault": false
+          },
+          {
+            "name": "name",
+            "type": "varchar(80)",
+            "isNullable": true,
+            "hasDefault": false
+          },
+          {
+            "name": "currency",
+            "type": "varchar(3)",
+            "isNullable": false,
+            "hasDefault": true
+          },
+          {
+            "name": "open",
+            "type": "time",
+            "isNullable": true,
+            "hasDefault": false
+          },
+          {
+            "name": "close",
+            "type": "time",
+            "isNullable": true,
+            "hasDefault": false
+          }
+        ],
+        "key": [
+          "cname"
+        ],
+        "references": [],
+        "path": "\"public\".\"market\""
+      },
+      "provider": {
+        "type": "table",
+        "name": "provider",
+        "columns": [
+          {
+            "name": "cname",
+            "type": "varchar(8)",
+            "isNullable": false,
+            "hasDefault": false
+          },
+          {
+            "name": "name",
+            "type": "varchar(80)",
+            "isNullable": true,
+            "hasDefault": false
+          }
+        ],
+        "key": [
+          "cname"
+        ],
+        "references": [],
+        "path": "\"public\".\"provider\""
+      },
+      "listing": {
+        "type": "table",
+        "name": "listing",
+        "columns": [
+          {
+            "name": "type",
+            "type": "asset_type",
+            "isNullable": false,
+            "hasDefault": false
+          },
+          {
+            "name": "symbol",
+            "type": "varchar(8)",
+            "isNullable": false,
+            "hasDefault": false
+          },
+          {
+            "name": "name",
+            "type": "varchar(80)",
+            "isNullable": true,
+            "hasDefault": false
+          },
+          {
+            "name": "market",
+            "type": "varchar(8)",
+            "isNullable": false,
+            "hasDefault": false
+          },
+          {
+            "name": "enabled",
+            "type": "boolean",
+            "isNullable": false,
+            "hasDefault": true
+          },
+          {
+            "name": "isin",
+            "type": "varchar(12)",
+            "isNullable": true,
+            "hasDefault": false
+          },
+          {
+            "name": "sector",
+            "type": "varchar(80)",
+            "isNullable": true,
+            "hasDefault": false
+          },
+          {
+            "name": "industry",
+            "type": "varchar(80)",
+            "isNullable": true,
+            "hasDefault": false
+          }
+        ],
+        "key": [
+          "symbol"
+        ],
+        "references": [
+          {
+            "source": {
+              "key": [
+                "market"
+              ]
+            },
+            "destination": {
+              "key": [
+                "cname"
+              ],
+              "table": "\"market\""
+            }
+          }
+        ],
+        "path": "\"public\".\"listing\""
+      }
+    },
+    "domains": [],
+    "enums": [
+      {
+        "type": "enum",
+        "name": "asset_type",
+        "values": [
+          "IDX",
+          "STK",
+          "FX",
+          "CFX"
+        ]
+      }
+    ]
+  }
+}

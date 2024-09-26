@@ -1,9 +1,8 @@
-import readline from 'readline'
+import readline from 'node:readline'
 import config from '../config'
 import { DB_ERROR } from "../errors"
 import tools from "../tools"
 import { MigrationGraph, MigrationGraphNode } from "../tools/fs"
-import pg from 'pg'
 import * as info from './info'
 import * as schemaManager from './schema'
 import { executeSqlFile } from '../client'
@@ -11,6 +10,7 @@ import { prefixSchema, unPrefixSchema } from '../tools/string_utils'
 import { generateDBSchema } from '../generator'
 import { DBSchema } from '../parser/enhance'
 import { qb } from '../generator/lib/queryBuilder'
+import { IClient, MigrationOptions } from '../interfaces'
 
 /**
  * Use internally to prompt the user. This is recommended for helping debug
@@ -34,13 +34,9 @@ function askQuestion(query: string): Promise<string> {
 /**
  * Creates a list of all tables in given schema.
  */
-async function listAllTables(schema = "public"): Promise<string[]> {
-    const client = new pg.Client({...config.db.connection, ...config.db.roles.sa})
-
-    await client.connect()
+async function listAllTables(client: IClient, schema = "public"): Promise<string[]> {
     const response = await client.query(`SELECT * FROM pg_tables WHERE schemaname='${prefixSchema(schema)}';`)
-    const result = response.rows.map(x => x.tablename)
-    client.end()
+    const result = response[0].rows.map(x => x.tablename)
     return result
 }
 
@@ -52,10 +48,7 @@ interface EnumReference {
 /**
  * Creates a list of all enums and in which schema they appear.
  */
-async function listAllEnums(): Promise<EnumReference[]> {
-    const client = new pg.Client({...config.db.connection, ...config.db.roles.sa})
-
-    await client.connect()
+async function listAllEnums(client: IClient): Promise<EnumReference[]> {
     const response = await client.query(`
 SELECT
     n.nspname AS "schema",  
@@ -67,25 +60,20 @@ WHERE
 	t.oid = e.enumtypid
 GROUP BY (n.nspname, t.typname)`
     )
-    const result = response.rows
-    client.end()
+    const result = response[0].rows
     return result
 }
 
 /**
  * Counts the amount of rows on a given table. Can count at most 5K rows.
  */
-async function countTableRows(schema: string, table: string, limit = 5000): Promise<number> {
-    const client = new pg.Client({...config.db.connection, ...config.db.roles.sa})
-
-    await client.connect()
+async function countTableRows(client: IClient, schema: string, table: string, limit = 5000): Promise<number> {
     const response = await client.query(`
         SELECT COUNT(*) FROM ( 
             SELECT * FROM "${schema}"."${table}" LIMIT ${limit}
         ) AS x;
     `)
-    const result = parseInt(response.rows[0]?.count)
-    await client.end()
+    const result = parseInt(response[0]?.rows[0]?.count)
     return result
 }
 
@@ -95,32 +83,28 @@ interface TableCount {
     count: number
 }
 
-async function generateSchemaTableCount(schemas: string[]): Promise<TableCount[]> {
+async function generateSchemaTableCount(client: IClient, schemas: string[]): Promise<TableCount[]> {
     const tableCounts = []
     for (const schema of schemas) {
-        const tables = await listAllTables(schema)
+        const tables = await listAllTables(client, schema)
         for (const table of tables) {
-            const count = await countTableRows(schema, table)
+            const count = await countTableRows(client, schema, table)
             tableCounts.push({ schema, table, count })
         }
     }
     return tableCounts
 }
 
-async function createEnumTypeCasts(fromSchemas: string[], toSchemas: string[]): Promise<void> {
+async function createEnumTypeCasts(client: IClient, fromSchemas: string[], toSchemas: string[]): Promise<void> {
 
     async function createCast(from: EnumReference, to: EnumReference): Promise<void> {
         const sql = 
             `CREATE CAST ("${from.schema}"."${from.name}" AS "${to.schema}"."${to.name}") WITH INOUT AS IMPLICIT;`
-        const client = new pg.Client({...config.db.connection, ...config.db.roles.sa})
     
-        console.log("Executing SQL:", sql)
-        await client.connect()
         await client.query(sql)
-        await client.end()
     }
 
-    const enums = await listAllEnums()
+    const enums = await listAllEnums(client)
     for (const schema of fromSchemas.filter(x => toSchemas.includes(x))) {
         const fromEnums = enums.filter(x => x.schema == `o_${schema}`)
         const toEnums = enums.filter(x => x.schema == schema)
@@ -134,18 +118,13 @@ async function createEnumTypeCasts(fromSchemas: string[], toSchemas: string[]): 
     }
 }
 
-async function autoInsertSelect(schema: DBSchema, schemaName: string, tableName: string): Promise<void> {
+async function autoInsertSelect(client: IClient, schema: DBSchema, schemaName: string, tableName: string): Promise<void> {
     const dest = `"${prefixSchema(schemaName)}"."${tableName}"`
     const from = `"o_${prefixSchema(schemaName)}"."${tableName}"`
     const columns = qb.columnList(schema[unPrefixSchema(schemaName)].tables[tableName].columns.map(x => x.name))
     const sql = `INSERT INTO ${dest} (${columns}) SELECT ${columns} FROM ${from};`
 
-    const client = new pg.Client({...config.db.connection, ...config.db.roles.sa})
-
-    console.log("Executing SQL:", sql)
-    await client.connect()
     await client.query(sql)
-    await client.end()
 }
 
 
@@ -207,10 +186,10 @@ export function createMigrationPlan(from: string, to = "api"): string[] {
  * 
  * If in development mode, we pause at key steps to allow for debugging.
  */
-export async function migrateStep(from: string, to: string): Promise<void> {
-    console.log("Migration:", from, "-->", to)
+export async function migrateStep(client: IClient, opts: MigrationOptions, from: string, to: string): Promise<void> {
+    opts.logger.info("Migration:", from, "-->", to)
 
-    const state : info.MetaState = await info.getMetaByKey('state') as info.MetaState
+    const state : info.MetaState = await info.getMetaByKey(client, opts, 'state') as info.MetaState
     const fromSchemas = tools.findSQLSchemas(from, true)
     const toSchemas = tools.findSQLSchemas(to, true)
     if (state?.migration !== 'ready') throw DB_ERROR.INVALID_STATE
@@ -219,14 +198,15 @@ export async function migrateStep(from: string, to: string): Promise<void> {
         await askQuestion("Migration ready, paused before start. Press [ENTER] to continue.");
     }
 
-    await info.setMetaByKey('state', {...state, migration: 'in-progress'})
-    await schemaManager.renameSchemas( fromSchemas.map(x => [x, `o_${x}`]) )
+    await info.setMetaByKey(client, opts, 'state', {...state, migration: 'in-progress'})
+    await schemaManager.renameSchemas(client, opts.db, fromSchemas.map(x => [x, `o_${x}`]) )
     try {
         for (const schema of toSchemas) {
-            await schemaManager.createSchema(schema, to)
+            await schemaManager.createSchema(client, opts, schema, to)
         }
-        await schemaManager.initializePublicSchema(to, 'in-progress')
-        await createEnumTypeCasts(fromSchemas, toSchemas)
+        await client.connect({ ...opts.db.roles.sa })
+        await schemaManager.initializePublicSchema(client, opts, to, 'in-progress')
+        await createEnumTypeCasts(client, fromSchemas, toSchemas)
     
         if (config.isDevelopment()) {
             await askQuestion("Migration paused before executing script. Press [ENTER] to continue.");
@@ -234,37 +214,38 @@ export async function migrateStep(from: string, to: string): Promise<void> {
     
         if (!config.db.prefix) {
             await executeSqlFile(
+                client,
                 `sql/${to}/${from}.sql`,
-                {...config.db.connection, ...config.db.roles.sa},
                 [`SET session_replication_role = replica;`],
                 [`SET session_replication_role = DEFAULT;`])
         } else {
             await executeSqlFile(
-                `sql/${to}/${from}.sql`,
-                {...config.db.connection, ...config.db.roles.sa})
+                client,
+                `sql/${to}/${from}.sql`)
         }
+        client.end()
     
-        const tablesInOrigin = await generateSchemaTableCount(fromSchemas.map(x => `o_${x}`))
-        const tablesToMove = (await generateSchemaTableCount(toSchemas))
+        const tablesInOrigin = await generateSchemaTableCount(client, fromSchemas.map(x => `o_${x}`))
+        const tablesToMove = (await generateSchemaTableCount(client, toSchemas))
             .filter( x => x.count == 0)
             .filter (x => tablesInOrigin.find(y => y.schema === `o_${x.schema}` && y.table === x.table && y.count > 0))
             .map(x => [x.schema, x.table])
     
         for (const [schema, table] of tablesToMove) {
             const dbSchema = generateDBSchema(from)
-            await autoInsertSelect(dbSchema, schema, table)
+            await autoInsertSelect(client, dbSchema, schema, table)
         }
     } catch (e) {
-        console.log("ERROR! ROLLING BACK TO VERSION", from)
-        console.log(e)
-        await schemaManager.deleteSchemas( toSchemas.reverse() )
-        await schemaManager.renameSchemas( fromSchemas.map(x => [`o_${x}`, x]) )
-        await info.setMetaByKey('state', {...state, migration: 'ready'})
+        opts.logger.error("ERROR! ROLLING BACK TO VERSION", from)
+        opts.logger.info(e)
+        await schemaManager.deleteSchemas(client, opts.db, toSchemas.reverse() )
+        await schemaManager.renameSchemas(client, opts.db, fromSchemas.map(x => [`o_${x}`, x]) )
+        await info.setMetaByKey(client, opts, 'state', {...state, migration: 'ready'})
         throw e
     }
 
-    await schemaManager.deleteSchemas(fromSchemas.map(x => `o_${x}`).reverse())
-    await info.setMetaByKey('state', {...state, migration: 'ready'})
+    await schemaManager.deleteSchemas(client, opts.db, fromSchemas.map(x => `o_${x}`).reverse())
+    await info.setMetaByKey(client, opts,'state', {...state, migration: 'ready'})
 }
 
 

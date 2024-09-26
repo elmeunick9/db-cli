@@ -1,52 +1,49 @@
-import pg from 'pg'
-import config from "../config.js"
 import { findSQLFiles, findVersion } from '../tools/core.js'
 import { executeSqlFile } from '../client/index.js'
 import { MetaInfo } from './info.js'
 import { prefixSchema } from '../tools/string_utils.js'
+import { IClient, InitOptions } from "../interfaces.js"
+import { Config } from '../config.js'
 
-export async function createSchema(name = 'public', version = 'next'): Promise<void> {
-    const client = new pg.Client({...config.db.connection, ...config.db.roles.sa})
+export async function createSchema(client: IClient, opts: InitOptions, name = 'public', version = 'next'): Promise<void> {
+    await client.connect({...opts.db.roles.sa})
 
-    const roles = config.db.roles
+    const roles = opts.db.roles
     const user = roles.api.user
 
-    await client.connect()
     if (name === "public") {
-        await client.query(`CREATE SCHEMA IF NOT EXISTS ${prefixSchema(name)};`)
+        await client.query(`CREATE SCHEMA IF NOT EXISTS ${prefixSchema(name, opts.db.prefix)};`)
         //await client.query(`ALTER SCHEMA "${prefixSchema(name)}" OWNER TO ${user}`);
     }
-    else await client.query(`CREATE SCHEMA ${prefixSchema(name)};`)
+    else await client.query(`CREATE SCHEMA ${prefixSchema(name, opts.db.prefix)};`)
 
     for (const filepath of findSQLFiles({ version, schema: name })) {
-        await executeSqlFile(filepath, client, [`SET SCHEMA '${prefixSchema(name)}';`])
+        await executeSqlFile(client, filepath, [`SET SCHEMA '${prefixSchema(name, opts.db.prefix)}';`])
     }
 
     for (const filepath of findSQLFiles({ version, schema: name, type: 'function', allowMultiple: true })) {
-        await executeSqlFile(filepath, client, [`SET SCHEMA '${prefixSchema(name)}';`], [], false)
+        await executeSqlFile(client, filepath, [`SET SCHEMA '${prefixSchema(name, opts.db.prefix)}';`], [], false)
     }
 
     for (const filepath of findSQLFiles({ version, schema: name, type: 'insert' })) {
-        await executeSqlFile(filepath, client, [`SET SCHEMA '${prefixSchema(name)}';`])
+        await executeSqlFile(client, filepath, [`SET SCHEMA '${prefixSchema(name, opts.db.prefix)}';`])
     }
 
-    await client.query(`GRANT SELECT, UPDATE, INSERT, DELETE ON ALL TABLES IN SCHEMA ${prefixSchema(name)} TO ${user};`)
-    await client.query(`GRANT USAGE ON ALL SEQUENCES IN SCHEMA ${prefixSchema(name)} TO ${user};`)
-    await client.query(`GRANT USAGE ON SCHEMA ${prefixSchema(name)} TO ${user};`)
+    await client.query(`GRANT SELECT, UPDATE, INSERT, DELETE ON ALL TABLES IN SCHEMA ${prefixSchema(name, opts.db.prefix)} TO ${user};`)
+    await client.query(`GRANT USAGE ON ALL SEQUENCES IN SCHEMA ${prefixSchema(name, opts.db.prefix)} TO ${user};`)
+    await client.query(`GRANT USAGE ON SCHEMA ${prefixSchema(name, opts.db.prefix)} TO ${user};`)
     await client.end()
 }
 
-export async function initializePublicSchema(version: string, migration_state = 'ready'): Promise<void> {
+export async function initializePublicSchema(client: IClient, opts: InitOptions, version: string, migration_state = 'ready'): Promise<void> {
     const info : MetaInfo = {
         'version': findVersion(version),
-        'description': config.app.description ?? "",
+        'description': opts.meta.description ?? "",
         'creation-date': (new Date()).toISOString(),
-        'source': config.app.source ?? ""
+        'source': opts.meta.source ?? ""
     }
     const state = { migration: migration_state }
-    const client = new pg.Client({...config.db.connection, ...config.db.roles.sa})
 
-    await client.connect()
     await client.query(
         `CREATE TABLE "${prefixSchema("public")}"."meta" (
             "key"               varchar(8)          ,
@@ -56,21 +53,22 @@ export async function initializePublicSchema(version: string, migration_state = 
     )
     await client.query(`INSERT INTO "${prefixSchema("public")}"."meta" VALUES ('info' , '${JSON.stringify(info)}');`)
     await client.query(`INSERT INTO "${prefixSchema("public")}"."meta" VALUES ('state' , '${JSON.stringify(state)}');`)
-    await client.end()
 }
 
-export async function initializeSchema(schema: string, version: string): Promise<void> {
-    if (schema === 'public' || schema === prefixSchema("public")) {
-        await initializePublicSchema(version)
+export async function initializeSchema(client: IClient, opts: InitOptions, schema: string, version: string): Promise<void> {
+    client.connect({...opts.db.roles.sa})
+    if (schema === 'public' || schema === prefixSchema("public", opts.db.prefix)) {
+        await initializePublicSchema(client, opts, version)
     }
 
     if (findSQLFiles({ version, schema, type: 'snapshot' }).length > 0) {
         //await sys.applySnapshoot(schema, version) 
     } else {
         for (const filepath of findSQLFiles({ version, schema, type: 'default' })) {
-            await executeSqlFile(filepath, {...config.db.connection, ...config.db.roles.sa}, [`SET SCHEMA '${prefixSchema(schema)}';`])
+            await executeSqlFile(client, filepath, [`SET SCHEMA '${prefixSchema(schema, opts.db.prefix)}';`])
         }
     }
+    client.end()
 }
 
 /**
@@ -79,13 +77,13 @@ export async function initializeSchema(schema: string, version: string): Promise
  * 
  * @param schemasMapping A list of pairs of names.
  */
-export async function renameSchemas(schemasMapping: [old: string, new: string][]): Promise<void> {
-    const client = new pg.Client({...config.db.connection, ...config.db.roles.sa})
+export async function renameSchemas(client: IClient, db: Config['db'], schemasMapping: [old: string, new: string][]): Promise<void> {
+    await client.connect({...db.roles.sa})
 
-    await client.connect()
     for (const [oldName, newName] of schemasMapping) {
-        await client.query(`ALTER SCHEMA "${prefixSchema(oldName)}" RENAME TO "${prefixSchema(newName)}"`)
+        await client.query(`ALTER SCHEMA "${prefixSchema(oldName, db.prefix)}" RENAME TO "${prefixSchema(newName, db.prefix)}"`)
     }
+
     await client.end()
 }
 
@@ -94,15 +92,14 @@ export async function renameSchemas(schemasMapping: [old: string, new: string][]
  * 
  * @param schemas A list of schema names.
  */
-export async function deleteSchemas(schemas: string[]): Promise<void> {
-    const client = new pg.Client({...config.db.connection, ...config.db.roles.sa})
+export async function deleteSchemas(client: IClient, db: Config['db'], schemas: string[]): Promise<void> {
+    await client.connect({...db.roles.sa})
 
-    await client.connect()
     for (const schema of schemas) {
-        const sql = `DROP SCHEMA IF EXISTS "${prefixSchema(schema)}" CASCADE`
-        console.log("Executing SQL:", sql)
+        const sql = `DROP SCHEMA IF EXISTS "${prefixSchema(schema, db.prefix)}" CASCADE`
         await client.query(sql)
     }
+
     await client.end()
 }
 

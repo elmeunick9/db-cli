@@ -1,11 +1,9 @@
-import config from "../config"
-
-export function prefixSchema(schema: string, prefix = config.db.prefix): string {
-    return (config.db.prefix == null || config.db.prefix.length < 2 || schema.startsWith(prefix) || schema.startsWith("o_")) ? schema : `${prefix}${schema}`
+export function prefixSchema(schema: string, prefix?: string): string {
+    return (prefix == null || prefix.length < 2 || schema.startsWith(prefix) || schema.startsWith("o_")) ? schema : `${prefix}${schema}`
 }
 
-export function unPrefixSchema(schema: string, prefix = config.db.prefix): string {
-    return (config.db.prefix == null || config.db.prefix.length < 2 || !schema.startsWith(prefix)) ? schema : schema.slice(prefix.length)
+export function unPrefixSchema(schema: string, prefix?: string): string {
+    return (prefix == null || prefix.length < 2 || !schema.startsWith(prefix)) ? schema : schema.slice(prefix.length)
 }
 
 export const quote = (s: string, c: "'" | '"' = '"'): string => {
@@ -23,7 +21,7 @@ export const unquote = (s: string): string => {
 }
 
 const schemaIdentifierRegexPattern = /(?<!\.)"[a-z0-9_]+"\./g;
-export const replaceSchemaName = (text: string): string => {
+export const replaceSchemaName = (text: string, prefix?: string): string => {
     let result = "";
     let start = 0;
     const matches = [...text.matchAll(schemaIdentifierRegexPattern)];
@@ -34,7 +32,7 @@ export const replaceSchemaName = (text: string): string => {
 
         // Check if the match is within a string literal
         const prefixSingleQuoteCount = text.slice(0, match.index).split("'").length - 1;
-        if ((prefixSingleQuoteCount % 2) === 0 && !match[0].startsWith('"' + config.db.prefix)) {
+        if ((prefixSingleQuoteCount % 2) === 0 && !match[0].startsWith('"' + prefix)) {
             // Perform substitution if not within a string literal
             const name = match[0].slice(1, -2)
             result += match[0].replace(match[0], `"${prefixSchema(name)}".`);

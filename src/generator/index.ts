@@ -49,12 +49,33 @@ export function generateDBSchema(version = config.isDevelopment() ? 'next' : 'ap
     return parser.enhance(tree)
 }
 
-export function writeJSON(schema: DBSchema, dest = "generated/db-schema.json"): void {
-    fs.mkdirSync(dest.split("/").slice(0, -1).join("/"), { recursive: true })
-    fs.writeFileSync(dest, JSON.stringify(schema, null, 2))
+export interface WriteJsonOptions {
+    dest: string
 }
 
-export function writeLibrary(schema: DBSchema, dest = "dist/out/index.ts"): void {
+export function writeJSON(schema: DBSchema, options: Partial<WriteJsonOptions> = {}): void {
+    const opts = {
+        dest: "generated/db-schema.json",
+        ...options
+    }
+    fs.mkdirSync(opts.dest.split("/").slice(0, -1).join("/"), { recursive: true })
+    fs.writeFileSync(opts.dest, JSON.stringify(schema, null, 2))
+}
+
+export interface WriteLibraryOptions {
+    dest: string
+    libraryPath: string
+    typesPath: string
+}
+
+export function writeLibrary(schema: DBSchema, options: Partial<WriteLibraryOptions> = {}): void {
+    const opts: WriteLibraryOptions = {
+        dest: "generated/index.ts",
+        libraryPath: "../dist/lib.mjs",
+        typesPath: "../dist/types/generator/lib/index.d.ts",
+        ...options,
+    }
+
     const interfacesTextG = (schemaName: string): string => Object.keys(schema[schemaName].tables)
         .map(tableName => {
             const table = schema[schemaName].tables[tableName]
@@ -73,20 +94,20 @@ export function writeLibrary(schema: DBSchema, dest = "dist/out/index.ts"): void
         .map(tableName => {
             const table = schema[schemaName].tables[tableName]
             return buildApi(schemaName, table)
-        }).join("\n")
+        }).join("\n\n")
     
     const indexContent =
 `
 /* eslint-disable @typescript-eslint/prefer-namespace-keyword */
 /* eslint-disable @typescript-eslint/no-namespace */
-import { type DBSchema } from "@hubbit86/db-cli/dist/types/parser/enhance"
-import lib, { type kObject, type ListOptions, type ReadOptions, type Options, type Clause } from "@hubbit86/db-cli"
-export * as lib from "@hubbit86/db-cli"
+import type { kObject, ListOptions, ReadOptions, Options, Clause, IClient, DBSchema } from "${opts.typesPath}"
+import { lib } from "${opts.libraryPath}"
+export * as lib from "${opts.libraryPath}"
 
 // -- INTERFACES --
-export module schema {
+export namespace schema {
 ${Object.keys(schema).map(schemaName => 
-`    export module ${toPascalCase(schemaName)} {
+`    export namespace ${toPascalCase(schemaName)} {
 ${domainsTextG(schemaName)}
 ${enumsTextG(schemaName)}
 ${interfacesTextG(schemaName)}
@@ -95,19 +116,39 @@ ${interfacesTextG(schemaName)}
 }
 
 const _info: DBSchema = ${JSON.stringify(schema)}
-export module api {
-${Object.keys(schema).map(schemaName => 
-    `    export module ${toPascalCase(schemaName)} {
-${apiTextG(schemaName)}
-    }`
-).join("\n")}
+
+${Object.keys(schema).map(schemaName => apiTextG(schemaName)).join("\n\n")}
+
+${Object.keys(schema).map(schemaName => `
+class ${toPascalCase(schemaName)}Schema {
+    constructor(
+        private client: IClient,
+    ) {}
+
+    ${Object.keys(schema[schemaName].tables).map(tableName => `
+    public get ${toPascalCase(tableName)}(): ${toPascalCase(tableName)}Table {
+        return new ${toPascalCase(tableName)}Table(this.client);
+    }
+    `).join("\n")}
+}`).join("\n\n")}
+
+export class Api {
+    constructor(
+        private client: IClient,
+    ) {}
+
+    ${Object.keys(schema).map(schemaName => `
+    public get ${toPascalCase(schemaName)}(): ${toPascalCase(schemaName)}Schema {
+        return new ${toPascalCase(schemaName)}Schema(this.client);
+    }
+    `).join("\n\n")}
 }
 
 export const info = (): DBSchema => (${JSON.stringify(schema)})
 
-export default { api, info, ...lib }
+export default { Api, info, ...lib }
 `
 
-    fs.mkdirSync(dest.split("/").slice(0, -1).join("/"), { recursive: true })
-    fs.writeFileSync(dest, indexContent)
+    fs.mkdirSync(opts.dest.split("/").slice(0, -1).join("/"), { recursive: true })
+    fs.writeFileSync(opts.dest, indexContent)
 }

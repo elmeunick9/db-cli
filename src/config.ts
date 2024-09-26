@@ -16,6 +16,7 @@ export interface Config {
             }
         },
         prefix: string
+        publicSchema: string
     }
     app: {
         name: string
@@ -51,7 +52,8 @@ const config : Config = {
                 password:   process.env.DB_SA_PASS          || '0000',
             }
         },
-        prefix:         process.env.DB_SCHEMA_PREFIX        || ''
+        prefix:         process.env.DB_SCHEMA_PREFIX        || '',
+        publicSchema:   process.env.DB_SCHEMA_PUBLIC        || 'public'
     },
     app: {
         name:           process.env.npm_package_name,
