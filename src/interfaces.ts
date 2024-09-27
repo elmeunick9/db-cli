@@ -141,3 +141,5 @@ export interface InitOptions extends Options {
 export interface MigrationOptions extends InitOptions {
     to: string
 }
+
+export { SQLQuery } from "./generator/lib/queryBuilder"

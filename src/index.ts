@@ -9,6 +9,7 @@ import * as stringUtils from './tools/string_utils';
 import { DatabaseError, IClient, InitOptions, MigrationOptions } from './interfaces'
 import * as lib from './generator/lib'
 export * as lib from './generator/lib'
+export * as queryBuilder from './generator/lib/queryBuilder'
 
 /**
  * Initializes the DB when on development mode. It will delete and recreate the DB
