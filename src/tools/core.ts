@@ -86,7 +86,7 @@ export function findSQLFiles(filter: SQLFileMatchFilter): string[] {
 /**
  * @returns A list of each schema name.
  */
-export function findSQLSchemas(version: string, sorted = false, withPrefix = true): string[] {
+export function findSQLSchemas(version: string, sorted = false, prefix = ""): string[] {
     if (!sorted) {
         const names = fs.readDirectoryRecursive('sql/' + findVersion(version))
         .filter(path => path.endsWith('schema.sql'))
@@ -101,10 +101,10 @@ export function findSQLSchemas(version: string, sorted = false, withPrefix = tru
         })
         .filter(x => x !== "public")
 
-        return ["public", ...new Set(names)].map(x => `${prefixSchema(x, withPrefix ? undefined : "")}`)
+        return [prefixSchema("public", prefix), ...new Set(names)].map(x => `${prefixSchema(x, prefix)}`)
     }
 
-    const dependencyMap = createSQLSchemaDependencyMap(version, withPrefix)
+    const dependencyMap = createSQLSchemaDependencyMap(version, prefix)
 
     // Sort the original names based on dependency DAG (Directed Acyclic Graph)
     // The O(n^3) algorithm is slow but its ok (we assume n=30 max)
@@ -139,7 +139,7 @@ export function findSQLSchemas(version: string, sorted = false, withPrefix = tru
  * 
  * @returns A list dependent schemas.
  */
-export function createSQLSchemaDependencyMap(version: string, withPrefix = true): Map<string, string[]> {
+export function createSQLSchemaDependencyMap(version: string, prefix = ""): Map<string, string[]> {
     const getTablePath = (input: string, schemaName: string): { schemaName: string, tableName: string } => input.includes('.')
         ? { schemaName: unquote(input.split('.')[0]), tableName: unquote(input.split('.')[1]) }
         : { schemaName: schemaName, tableName: unquote(input) }
@@ -157,7 +157,7 @@ export function createSQLSchemaDependencyMap(version: string, withPrefix = true)
                 .filter(x => x != schemaName)
             deps.push(...tableDeps)
         }
-        out.set(`${prefixSchema(schemaName, withPrefix ? undefined : "")}`, deps.map(x => `${prefixSchema(x, withPrefix ? undefined : "")}`))
+        out.set(`${prefixSchema(schemaName, prefix)}`, deps.map(x => `${prefixSchema(x, prefix)}`))
     }
 
     return out

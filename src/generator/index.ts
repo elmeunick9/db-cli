@@ -13,7 +13,7 @@ export interface AST {
 }
 
 export function ast(version = config.isDevelopment() ? 'next' : 'api'): AST {
-    const schemas = tools.findSQLSchemas(version, false, false)
+    const schemas = tools.findSQLSchemas(version, false)
     const treeSQL = {}
     for (const schema of schemas) {
         for (const filepath of tools.findSQLFiles({ version, schema })) {

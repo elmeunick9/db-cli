@@ -95,7 +95,7 @@ export async function migrate(client: IClient, options: Partial<MigrationOptions
             opts.logger.log("Already on last release, skipping migration.")
         }
         for (const step of plan) {
-            await manager.migrateStep(client, opts, current, step)
+            await manager.migrateStep(client, opts, current, step, opts.db.prefix)
             current = step
         }
     } catch (e) {

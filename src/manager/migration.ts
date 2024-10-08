@@ -186,12 +186,12 @@ export function createMigrationPlan(from: string, to = "api"): string[] {
  * 
  * If in development mode, we pause at key steps to allow for debugging.
  */
-export async function migrateStep(client: IClient, opts: MigrationOptions, from: string, to: string): Promise<void> {
+export async function migrateStep(client: IClient, opts: MigrationOptions, from: string, to: string, prefix: string): Promise<void> {
     opts.logger.info("Migration:", from, "-->", to)
 
     const state : info.MetaState = await info.getMetaByKey(client, opts, 'state') as info.MetaState
-    const fromSchemas = tools.findSQLSchemas(from, true)
-    const toSchemas = tools.findSQLSchemas(to, true)
+    const fromSchemas = tools.findSQLSchemas(from, true, prefix)
+    const toSchemas = tools.findSQLSchemas(to, true, prefix)
     if (state?.migration !== 'ready') throw DB_ERROR.INVALID_STATE
 
     if (config.isDevelopment()) {
