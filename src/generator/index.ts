@@ -6,14 +6,14 @@ import { SchemaStore } from "../parser/prune"
 import tools from "../tools"
 import fs from 'fs'
 import { buildApi, buildDomain, buildEnum, buildInterface } from "./builder"
-import { toPascalCase } from "../tools/string_utils"
+import { toPascalCase, unPrefixSchema } from "../tools/string_utils"
 
 export interface AST {
     [schema: string]: ASTNode[]
 }
 
 export function ast(version = config.isDevelopment() ? 'next' : 'api', prefix = ""): AST {
-    const schemas = tools.findSQLSchemas(version, false, prefix)
+    const schemas = tools.findSQLSchemas(version, false, prefix).map((x) =>unPrefixSchema(x, prefix))
     const treeSQL = {}
     for (const schema of schemas) {
         for (const filepath of tools.findSQLFiles({ version, schema, prefix })) {
