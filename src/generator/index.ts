@@ -12,12 +12,12 @@ export interface AST {
     [schema: string]: ASTNode[]
 }
 
-export function ast(version = config.isDevelopment() ? 'next' : 'api'): AST {
-    const schemas = tools.findSQLSchemas(version, false)
+export function ast(version = config.isDevelopment() ? 'next' : 'api', prefix = ""): AST {
+    const schemas = tools.findSQLSchemas(version, false, prefix)
     const treeSQL = {}
     for (const schema of schemas) {
-        for (const filepath of tools.findSQLFiles({ version, schema, prefix: config.db.prefix })) {
-            treeSQL[schema] = [...(treeSQL[schema] ?? []), ...tools.loadSQLFile(filepath, {})]
+        for (const filepath of tools.findSQLFiles({ version, schema, prefix })) {
+            treeSQL[schema] = [...(treeSQL[schema] ?? []), ...tools.loadSQLFile(filepath, {}, prefix)]
         }
     }
 
@@ -39,8 +39,8 @@ export function ast(version = config.isDevelopment() ? 'next' : 'api'): AST {
     return tree
 }
 
-export function generateDBSchema(version = config.isDevelopment() ? 'next' : 'api'): DBSchema {
-    const treeNode = ast(version)
+export function generateDBSchema(version = config.isDevelopment() ? 'next' : 'api', prefix = ""): DBSchema {
+    const treeNode = ast(version, prefix)
     const tree: SchemaStore = {}
     for (const schema of Object.keys(treeNode)) {
         tree[schema] = treeNode[schema].map(stmt => parser.prune(stmt))

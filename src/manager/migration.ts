@@ -35,7 +35,8 @@ function askQuestion(query: string): Promise<string> {
  * Creates a list of all tables in given schema.
  */
 async function listAllTables(client: IClient, schema = "public"): Promise<string[]> {
-    const response = await client.query(`SELECT * FROM pg_tables WHERE schemaname='${prefixSchema(schema)}';`)
+    const prefix = client.settings().prefix
+    const response = await client.query(`SELECT * FROM pg_tables WHERE schemaname='${prefixSchema(schema, prefix)}';`)
     const result = response[0].rows.map(x => x.tablename)
     return result
 }
@@ -68,9 +69,10 @@ GROUP BY (n.nspname, t.typname)`
  * Counts the amount of rows on a given table. Can count at most 5K rows.
  */
 async function countTableRows(client: IClient, schema: string, table: string, limit = 5000): Promise<number> {
+    const prefix = client.settings().prefix
     const response = await client.query(`
         SELECT COUNT(*) FROM ( 
-            SELECT * FROM "${schema}"."${table}" LIMIT ${limit}
+            SELECT * FROM "${prefixSchema(schema, prefix)}"."${table}" LIMIT ${limit}
         ) AS x;
     `)
     const result = parseInt(response[0]?.rows[0]?.count)
@@ -119,9 +121,10 @@ async function createEnumTypeCasts(client: IClient, fromSchemas: string[], toSch
 }
 
 async function autoInsertSelect(client: IClient, schema: DBSchema, schemaName: string, tableName: string): Promise<void> {
-    const dest = `"${prefixSchema(schemaName)}"."${tableName}"`
-    const from = `"o_${prefixSchema(schemaName)}"."${tableName}"`
-    const columns = qb.columnList(schema[unPrefixSchema(schemaName)].tables[tableName].columns.map(x => x.name))
+    const prefix = client.settings().prefix
+    const dest = `"${prefixSchema(schemaName, prefix)}"."${tableName}"`
+    const from = `"o_${prefixSchema(schemaName, prefix)}"."${tableName}"`
+    const columns = qb.columnList(schema[unPrefixSchema(schemaName, prefix)].tables[tableName].columns.map(x => x.name))
     const sql = `INSERT INTO ${dest} (${columns}) SELECT ${columns} FROM ${from};`
 
     await client.query(sql)
@@ -258,7 +261,7 @@ export async function migrateStep(client: IClient, opts: MigrationOptions, from:
                 .map(x => [x.schema, x.table])
         
             for (const [schema, table] of tablesToMove) {
-                const dbSchema = generateDBSchema(from)
+                const dbSchema = generateDBSchema(from, prefix)
                 await autoInsertSelect(client, dbSchema, schema, table)
             }
         }
