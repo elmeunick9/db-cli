@@ -16,7 +16,7 @@ export function ast(version = config.isDevelopment() ? 'next' : 'api'): AST {
     const schemas = tools.findSQLSchemas(version, false)
     const treeSQL = {}
     for (const schema of schemas) {
-        for (const filepath of tools.findSQLFiles({ version, schema })) {
+        for (const filepath of tools.findSQLFiles({ version, schema, prefix: config.db.prefix })) {
             treeSQL[schema] = [...(treeSQL[schema] ?? []), ...tools.loadSQLFile(filepath, {})]
         }
     }

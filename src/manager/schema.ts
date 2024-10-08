@@ -17,15 +17,15 @@ export async function createSchema(client: IClient, opts: InitOptions, name = 'p
     }
     else await client.query(`CREATE SCHEMA ${prefixSchema(name, opts.db.prefix)};`)
 
-    for (const filepath of findSQLFiles({ version, schema: name })) {
+    for (const filepath of findSQLFiles({ version, schema: name, prefix: opts.db.prefix })) {
         await executeSqlFile(client, filepath, [`SET SCHEMA '${prefixSchema(name, opts.db.prefix)}';`])
     }
 
-    for (const filepath of findSQLFiles({ version, schema: name, type: 'function', allowMultiple: true })) {
+    for (const filepath of findSQLFiles({ version, schema: name, type: 'function', allowMultiple: true, prefix: opts.db.prefix })) {
         await executeSqlFile(client, filepath, [`SET SCHEMA '${prefixSchema(name, opts.db.prefix)}';`], [], false)
     }
 
-    for (const filepath of findSQLFiles({ version, schema: name, type: 'insert' })) {
+    for (const filepath of findSQLFiles({ version, schema: name, type: 'insert', prefix: opts.db.prefix })) {
         await executeSqlFile(client, filepath, [`SET SCHEMA '${prefixSchema(name, opts.db.prefix)}';`])
     }
 
@@ -61,10 +61,10 @@ export async function initializeSchema(client: IClient, opts: InitOptions, schem
         await initializePublicSchema(client, opts, version)
     }
 
-    if (findSQLFiles({ version, schema, type: 'snapshot' }).length > 0) {
+    if (findSQLFiles({ version, schema, type: 'snapshot', prefix: opts.db.prefix }).length > 0) {
         //await sys.applySnapshoot(schema, version) 
     } else {
-        for (const filepath of findSQLFiles({ version, schema, type: 'default' })) {
+        for (const filepath of findSQLFiles({ version, schema, type: 'default', prefix: opts.db.prefix })) {
             await executeSqlFile(client, filepath, [`SET SCHEMA '${prefixSchema(schema, opts.db.prefix)}';`])
         }
     }

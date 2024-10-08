@@ -35,6 +35,7 @@ export function findVersion(name: string): string {
 }
 
 export interface SQLFileMatchFilter {
+    prefix: string
     schema?: string
     type?: 'schema'|'version'|'insert'|'snapshot'|'default'|'function'
     version?: string
@@ -55,7 +56,7 @@ export function findSQLFiles(filter: SQLFileMatchFilter): string[] {
         ...filter
     }
 
-    filter.schema = unPrefixSchema(filter.schema)
+    filter.schema = unPrefixSchema(filter.schema, filter.prefix)
 
     const version = findVersion(filter.version)
     const basePath = `sql/${version}`
