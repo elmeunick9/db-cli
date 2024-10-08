@@ -2,11 +2,11 @@ import readline from 'node:readline'
 import config from '../config'
 import { DB_ERROR } from "../errors"
 import tools from "../tools"
-import { MigrationGraph, MigrationGraphNode } from "../tools/fs"
+import { loadSQLFile, MigrationGraph, MigrationGraphNode, parseCommand } from "../tools/fs"
 import * as info from './info'
 import * as schemaManager from './schema'
-import { executeSqlFile } from '../client'
-import { prefixSchema, unPrefixSchema } from '../tools/string_utils'
+import { CommandExecutionSet, executeSqlFile } from '../client'
+import { prefixSchema, unPrefixSchema, unquote } from '../tools/string_utils'
 import { generateDBSchema } from '../generator'
 import { DBSchema } from '../parser/enhance'
 import { qb } from '../generator/lib/queryBuilder'
@@ -190,8 +190,11 @@ export async function migrateStep(client: IClient, opts: MigrationOptions, from:
     opts.logger.info("Migration:", from, "-->", to)
 
     const state : info.MetaState = await info.getMetaByKey(client, opts, 'state') as info.MetaState
+    const commands = loadSQLFile(`sql/${to}/${from}.sql`, { mode: 'commands' }).map(parseCommand)
     const fromSchemas = tools.findSQLSchemas(from, true, prefix)
+        .filter(x => !commands.find(c => c.name === "skip-schema" && c.args.map(unquote).includes(unPrefixSchema(x, prefix))))
     const toSchemas = tools.findSQLSchemas(to, true, prefix)
+        .filter(x => !commands.find(c => c.name === "skip-schema" && c.args.map(unquote).includes(unPrefixSchema(x, prefix))))
     if (state?.migration !== 'ready') throw DB_ERROR.INVALID_STATE
 
     if (config.isDevelopment()) {
@@ -199,41 +202,57 @@ export async function migrateStep(client: IClient, opts: MigrationOptions, from:
     }
 
     await info.setMetaByKey(client, opts, 'state', {...state, migration: 'in-progress'})
-    await schemaManager.renameSchemas(client, opts.db, fromSchemas.map(x => [x, `o_${x}`]) )
+    if (fromSchemas.length > 0) {
+        await schemaManager.renameSchemas(client, opts.db, fromSchemas.map(x => [x, `o_${x}`]) )
+    }
     try {
         for (const schema of toSchemas) {
             await schemaManager.createSchema(client, opts, schema, to)
         }
-        await client.connect({ ...opts.db.roles.sa })
-        await schemaManager.initializePublicSchema(client, opts, to, 'in-progress')
-        await createEnumTypeCasts(client, fromSchemas, toSchemas)
+
+        if (toSchemas.length > 0) {
+            await client.connect({ ...opts.db.roles.sa })
+            await schemaManager.initializePublicSchema(client, opts, to, 'in-progress')
+            await createEnumTypeCasts(client, fromSchemas, toSchemas)
+        }
     
         if (config.isDevelopment()) {
             await askQuestion("Migration paused before executing script. Press [ENTER] to continue.");
         }
+
+        const commandSet: CommandExecutionSet = {
+            "include": async (client: IClient, args: string[]) => {
+                const file = unquote(args[0])
+                await executeSqlFile(client, `sql/${to}/${file}`, )
+            }
+        }
     
-        if (!config.db.prefix) {
+        if (!prefix && toSchemas.length > 0) {
             await executeSqlFile(
                 client,
                 `sql/${to}/${from}.sql`,
                 [`SET session_replication_role = replica;`],
-                [`SET session_replication_role = DEFAULT;`])
+                [`SET session_replication_role = DEFAULT;`],
+                true, commandSet)
         } else {
             await executeSqlFile(
                 client,
-                `sql/${to}/${from}.sql`)
+                `sql/${to}/${from}.sql`, 
+                [], [], true, commandSet)
         }
         client.end()
     
-        const tablesInOrigin = await generateSchemaTableCount(client, fromSchemas.map(x => `o_${x}`))
-        const tablesToMove = (await generateSchemaTableCount(client, toSchemas))
-            .filter( x => x.count == 0)
-            .filter (x => tablesInOrigin.find(y => y.schema === `o_${x.schema}` && y.table === x.table && y.count > 0))
-            .map(x => [x.schema, x.table])
-    
-        for (const [schema, table] of tablesToMove) {
-            const dbSchema = generateDBSchema(from)
-            await autoInsertSelect(client, dbSchema, schema, table)
+        if (fromSchemas.length > 0 && toSchemas.length > 0) {
+            const tablesInOrigin = await generateSchemaTableCount(client, fromSchemas.map(x => `o_${x}`))
+            const tablesToMove = (await generateSchemaTableCount(client, toSchemas))
+                .filter( x => x.count == 0)
+                .filter (x => tablesInOrigin.find(y => y.schema === `o_${x.schema}` && y.table === x.table && y.count > 0))
+                .map(x => [x.schema, x.table])
+        
+            for (const [schema, table] of tablesToMove) {
+                const dbSchema = generateDBSchema(from)
+                await autoInsertSelect(client, dbSchema, schema, table)
+            }
         }
     } catch (e) {
         opts.logger.error("ERROR! ROLLING BACK TO VERSION", from)

@@ -4,6 +4,19 @@ describe('FileSystem Related SQL Tools', () => {
 
     describe('loadSQLFile', () => {
 
+        it('Check mode === both', () => {
+            const file = `
+                --> Command 2
+
+                INSERT 1; -- Some comment;
+                --> Command 1
+                -- Comment
+                INSERT 2;`
+
+            expect(fs.loadSQLFile(file, { type: 'MEMORY', mode: 'both' })).toMatchObject(["--> Command 2", "INSERT 1", "--> Command 1", "INSERT 2"])
+
+        })
+
         it('Check proper formatting', () => {
             const file = `
             INSERT 1; -- Some comment;;
