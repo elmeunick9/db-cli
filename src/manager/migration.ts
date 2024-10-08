@@ -222,11 +222,18 @@ export async function migrateStep(client: IClient, opts: MigrationOptions, from:
 
         const commandSet: CommandExecutionSet = {
             "include": async (client: IClient, args: string[]) => {
-                const file = unquote(args[0])
-                const split = !file.endsWith('function.sql')
-                await executeSqlFile(client, `sql/${to}/${file}`, [], [], split)
+                const filePath = unquote(args[0]);
+                const match = filePath.match(/^(\w+)\/.*\/([\w_]+)\.function\.sql$/);
+        
+                if (match) {
+                    const schema = match[1];
+                    const prefix = [`SET SCHEMA '${prefixSchema(schema, opts.db.prefix)}';`];
+                    await executeSqlFile(client, `sql/${filePath}`, prefix, [], false);
+                } else {
+                    await executeSqlFile(client, `sql/${filePath}`, [], [], true);
+                }
             }
-        }
+        }        
     
         if (!prefix && toSchemas.length > 0) {
             await executeSqlFile(
