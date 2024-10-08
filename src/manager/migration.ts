@@ -275,7 +275,12 @@ export async function migrateStep(client: IClient, opts: MigrationOptions, from:
     }
 
     await schemaManager.deleteSchemas(client, opts.db, fromSchemas.map(x => `o_${x}`).reverse())
-    await info.setMetaByKey(client, opts,'state', {...state, migration: 'ready'})
+    await info.setMetaByKey(client, opts, 'state', {...state, migration: 'ready'})
+
+    if (!toSchemas.find(x => x === prefixSchema(opts.db.publicSchema, opts.db.prefix))) {
+        const info_state = await info.getMetaByKey(client, opts, 'info') as info.MetaInfo
+        await info.setMetaByKey(client, opts, 'info', {...info_state, version: to})
+    }
 }
 
 
