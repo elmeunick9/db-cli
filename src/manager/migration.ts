@@ -223,7 +223,8 @@ export async function migrateStep(client: IClient, opts: MigrationOptions, from:
         const commandSet: CommandExecutionSet = {
             "include": async (client: IClient, args: string[]) => {
                 const file = unquote(args[0])
-                await executeSqlFile(client, `sql/${to}/${file}`, )
+                const split = file.endsWith('function.sql')
+                await executeSqlFile(client, `sql/${to}/${file}`, [], [], split)
             }
         }
     
