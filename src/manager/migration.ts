@@ -228,9 +228,9 @@ export async function migrateStep(client: IClient, opts: MigrationOptions, from:
                 if (match) {
                     const schema = match[1];
                     const prefix = [`SET SCHEMA '${prefixSchema(schema, opts.db.prefix)}';`];
-                    await executeSqlFile(client, `sql/${filePath}`, prefix, [], false);
+                    await executeSqlFile(client, `sql/${to}/${filePath}`, prefix, [], false);
                 } else {
-                    await executeSqlFile(client, `sql/${filePath}`, [], [], true);
+                    await executeSqlFile(client, `sql/${to}/${filePath}`, [], [], true);
                 }
             }
         }        
