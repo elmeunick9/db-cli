@@ -1,6 +1,6 @@
 # What is DB-CLI
 
-It's a very opinionated tool written in Python for managing SQL databases (PostgreSQL) as infrastructure-as-code.
+It's a very opinionated tool written in Rust for managing SQL databases (PostgreSQL) as infrastructure-as-code.
 
 Its main goal is to provide a solid workflow and structure for everything related to creating, migrating, testing, versioning, code generation (prepare) and deploying your DB.
 
@@ -20,7 +20,7 @@ db init [version]
 
 When in production mode, it creates the DB and fails if it already exists.
 
-In development mode it creates/re-creates the DB and initializes it with the default data. 
+In development mode it creates/re-creates the DB and initializes it with the default data from _`insert.sql`_
 
 Optionally you can specify a version number or alias. By default the version "next" is used in development, and the version alias "latest" is used for production. 
 
