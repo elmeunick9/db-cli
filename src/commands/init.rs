@@ -29,15 +29,8 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
         return Err(format!("Version directory not found: {}", version_dir.display()).into());
     }
 
-    // 1) Create DB if missing using db.sql (if present)
-    let db_sql = version_dir.join("db.sql");
-    if db_sql.exists() {
-        println!("Ensuring database exists (using {})", db_sql.display());
-        db::create_db_if_missing(config, Some(&db_sql)).await?;
-    } else {
-        println!("No db.sql found, ensuring DB exists by name");
-        db::create_db_if_missing(config, None).await?;
-    }
+    // 1) Create DB
+    db::create_db(config).await?;
 
     // // 2) List schemas
     // let schemas = fs::list_schemas(sql_base, &version)?;

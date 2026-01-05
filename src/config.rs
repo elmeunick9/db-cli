@@ -163,7 +163,7 @@ impl Config {
 
     /// Check if in development mode
     pub fn is_dev(&self) -> bool {
-        self.mode == "dev"
+        self.mode == "dev" || self.mode == "development"
     }
 }
 
