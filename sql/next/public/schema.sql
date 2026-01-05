@@ -1,6 +1,8 @@
 CREATE DOMAIN uint4 AS int4 CHECK(VALUE >= 0 AND VALUE < 2147483648);
 CREATE DOMAIN url AS varchar(255);
 
+-- @block story
+-- @requires user
 CREATE TABLE "story_genre" (
     "id"                uuid                NOT NULL,
     "name"              varchar(80)         NOT NULL,
@@ -24,6 +26,7 @@ CREATE TABLE "story" (
     PRIMARY KEY ("id"),
     FOREIGN KEY ("author") REFERENCES "auth"."user" ("id")
 );
+-- @endblock
 
 CREATE TYPE comment_state AS ENUM ('ready', 'deleted', 'deleted-by-mod');
 CREATE TABLE "comment" (
@@ -56,7 +59,7 @@ CREATE TYPE mod_reason AS ENUM
     ('hate','spam','terms','self-harm','impersonation','personal-info',
     'threatening','harassment','illegal','copyright','trademark','other',
     'first-publication');
-    
+
 CREATE TYPE mod_resolution AS ENUM ('allowed', 'blocked');
 
 CREATE TABLE "comment_moderation" (

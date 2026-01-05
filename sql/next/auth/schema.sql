@@ -8,6 +8,7 @@ CREATE TABLE "verification_token" (
     PRIMARY KEY ("identifier", "token")
 );
 
+-- @block user
 CREATE TYPE user_role AS ENUM ('admin', 'user');
 CREATE DOMAIN url AS varchar(255);
 CREATE TABLE "user" (
@@ -23,6 +24,7 @@ CREATE TABLE "user" (
     PRIMARY KEY ("id"),
     UNIQUE ("email")
 );
+-- @endblock
 
 CREATE TABLE "account" (
     "id"                varchar(255)        NOT NULL,

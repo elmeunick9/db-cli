@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path};
 use crate::utils::db;
-use crate::utils::fs::{self, FileBlocks};
+use crate::utils::fs::{self, Block};
 use crate::config::Config;
 
 /// Initialize the database
@@ -33,18 +33,38 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
     db::create_db(config).await?;
 
     // // 2) List schemas
-    // let schemas = fs::list_schemas(sql_base, &version)?;
-    // println!("Found schemas: {:?}", schemas);
+    let schemas = fs::list_schemas(sql_base, &version)?;
+    println!("Found schemas: {:?}", schemas);
 
     // // 3) Read all files and parse blocks per schema
-    // let mut all_fileblocks: Vec<FileBlocks> = vec![];
-    // for schema in &schemas {
-    //     let files = fs::read_schema_files(sql_base, &version, schema)?;
-    //     for file_path in files {
-    //         let fb = fs::parse_blocks(&file_path)?;
-    //         all_fileblocks.push(fb);
-    //     }
-    // }
+    let mut blocks: Vec<Block> = vec![];
+    let mut files_count = 0;
+    for schema in &schemas {
+        let files = fs::read_schema_files(sql_base, &version, schema)?;
+        files_count += files.len();
+        for file_path in files {
+            let bks = fs::parse_blocks(&file_path)?;
+            blocks.extend(bks);
+        }
+    }
+
+    println!("Found {} files and {} blocks", files_count, blocks.len());
+
+    for block in &blocks {
+        if !block.file.ends_with("schema.sql") {
+            continue;
+        }
+        let sql_preview = if block.sql.len() > 50 {
+            format!("{}...", &block.sql[..block.sql.len().min(900)])
+        } else {
+            block.sql.clone()
+        };
+        println!("-- BLOCK {:?} --", block.name);
+        println!("schema={}, file={}, requires={:?}",
+                 block.schema, block.file, block.requires);
+        println!("{}", sql_preview);
+        println!();
+    }
 
     // // 4) Build dependency graph between blocks and files
     // // We'll map node ids as "file::<filepath>" for file-level, and "file::<filepath>#blockname" for blocks

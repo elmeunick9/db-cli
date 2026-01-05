@@ -1,3 +1,4 @@
+-- @requires /public/schema.sql
 CREATE DOMAIN uint8 AS int8 CHECK(VALUE >= 0 AND VALUE < 9223372036854775808);
 CREATE DOMAIN size_kb AS int4 CHECK(VALUE >= 0 AND VALUE < 2147483648);
 

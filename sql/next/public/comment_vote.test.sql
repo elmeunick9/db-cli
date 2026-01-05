@@ -1,3 +1,4 @@
+-- @requires ./comment_vote.function.sql
 CREATE FUNCTION "comment_vote_test" ()
 RETURNS text AS $$
 DECLARE

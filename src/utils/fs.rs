@@ -57,17 +57,14 @@ pub fn list_schemas(sql_base: &str, version: &str) -> Result<Vec<String>, Box<dy
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
-    pub block: Option<String>,
+    pub schema: String,
+    pub file: String,
+    pub name: Option<String>,
     pub requires: Vec<String>,
     pub sql: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileBlocks {
-    pub file: String,
-    pub requires: Vec<String>,
-    pub blocks: Vec<Block>,
-}
+
 
 /// Read all SQL files for a given schema (recursively optional). Returns map of filepath -> content
 pub fn read_schema_files(sql_base: &str, version: &str, schema: &str) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
@@ -91,7 +88,7 @@ pub fn read_schema_files(sql_base: &str, version: &str, schema: &str) -> Result<
 }
 
 /// Parse blocks and directives from a SQL file content
-pub fn parse_blocks(file_path: &Path) -> Result<FileBlocks, Box<dyn std::error::Error>> {
+pub fn parse_blocks(file_path: &Path) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
     let content = fs::read_to_string(file_path)?;
     let mut file_requires: Vec<String> = vec![];
     let mut blocks: Vec<Block> = vec![];
@@ -126,9 +123,13 @@ pub fn parse_blocks(file_path: &Path) -> Result<FileBlocks, Box<dyn std::error::
         }
         if trimmed.starts_with("-- @endblock") {
             // end the block
+            let mut requires = file_requires.clone();
+            requires.extend(current_requires.clone());
             let blk = Block {
-                block: in_block.clone(),
-                requires: current_requires.clone(),
+                schema: file_path.parent().unwrap().file_name().unwrap().to_str().unwrap().to_string(),
+                file: file_path.to_string_lossy().to_string(),
+                name: in_block.clone(),
+                requires,
                 sql: current_sql.clone(),
             };
             blocks.push(blk);
@@ -148,16 +149,16 @@ pub fn parse_blocks(file_path: &Path) -> Result<FileBlocks, Box<dyn std::error::
         }
     }
 
-    // file-level SQL goes into a block with block=None if non-empty
+    // file-level SQL goes into a block with name=None if non-empty
     if !file_sql.trim().is_empty() {
-        blocks.insert(0, Block { block: None, requires: vec![], sql: file_sql });
+        blocks.insert(0, Block {
+            schema: file_path.parent().unwrap().file_name().unwrap().to_str().unwrap().to_string(),
+            file: file_path.to_string_lossy().to_string(),
+            name: None,
+            requires: file_requires.clone(),
+            sql: file_sql,
+        });
     }
 
-    let fb = FileBlocks {
-        file: file_path.to_string_lossy().to_string(),
-        requires: file_requires,
-        blocks,
-    };
-
-    Ok(fb)
+    Ok(blocks)
 }
