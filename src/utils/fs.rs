@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -55,19 +54,15 @@ pub fn list_schemas(sql_base: &str, version: &str) -> Result<Vec<String>, Box<dy
     Ok(res)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Block {
-    pub schema: String,
-    pub file: String,
-    pub name: Option<String>,
-    pub requires: Vec<String>,
-    pub sql: String,
+/// Represents a file with its path and content
+#[derive(Debug, Clone)]
+pub struct FileContent {
+    pub path: PathBuf,
+    pub content: String,
 }
 
-
-
-/// Read all SQL files for a given schema (recursively optional). Returns map of filepath -> content
-pub fn read_schema_files(sql_base: &str, version: &str, schema: &str) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+/// Read all SQL files for a given schema (recursively optional). Returns Vec<FileContent>
+pub fn read_schema_files(sql_base: &str, version: &str, schema: &str) -> Result<Vec<FileContent>, Box<dyn std::error::Error>> {
     let base = Path::new(sql_base).join(version).join(schema);
     let mut files = vec![];
     if !base.exists() {
@@ -79,86 +74,14 @@ pub fn read_schema_files(sql_base: &str, version: &str, schema: &str) -> Result<
         if p.is_file() {
             if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
                 if ext == "sql" {
-                    files.push(p);
+                    let content = fs::read_to_string(&p)?;
+                    files.push(FileContent {
+                        path: p,
+                        content,
+                    });
                 }
             }
         }
     }
     Ok(files)
-}
-
-/// Parse blocks and directives from a SQL file content
-pub fn parse_blocks(file_path: &Path) -> Result<Vec<Block>, Box<dyn std::error::Error>> {
-    let content = fs::read_to_string(file_path)?;
-    let mut file_requires: Vec<String> = vec![];
-    let mut blocks: Vec<Block> = vec![];
-
-    let mut in_block: Option<String> = None;
-    let mut current_sql = String::new();
-    let mut current_requires: Vec<String> = vec![];
-    let mut file_sql = String::new();
-
-    for line in content.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("-- @requires") {
-            // parse requires
-            if let Some(req) = trimmed.split_whitespace().nth(2) {
-                let dep = req.trim().to_string();
-                if in_block.is_some() {
-                    current_requires.push(dep);
-                } else {
-                    file_requires.push(dep);
-                }
-            }
-            continue;
-        }
-        if trimmed.starts_with("-- @block") {
-            // start block
-            if let Some(name) = trimmed.split_whitespace().nth(2) {
-                in_block = Some(name.to_string());
-                current_sql.clear();
-                current_requires.clear();
-            }
-            continue;
-        }
-        if trimmed.starts_with("-- @endblock") {
-            // end the block
-            let mut requires = file_requires.clone();
-            requires.extend(current_requires.clone());
-            let blk = Block {
-                schema: file_path.parent().unwrap().file_name().unwrap().to_str().unwrap().to_string(),
-                file: file_path.to_string_lossy().to_string(),
-                name: in_block.clone(),
-                requires,
-                sql: current_sql.clone(),
-            };
-            blocks.push(blk);
-            in_block = None;
-            current_sql.clear();
-            current_requires.clear();
-            continue;
-        }
-
-        // Append SQL to current context
-        if in_block.is_some() {
-            current_sql.push_str(line);
-            current_sql.push('\n');
-        } else {
-            file_sql.push_str(line);
-            file_sql.push('\n');
-        }
-    }
-
-    // file-level SQL goes into a block with name=None if non-empty
-    if !file_sql.trim().is_empty() {
-        blocks.insert(0, Block {
-            schema: file_path.parent().unwrap().file_name().unwrap().to_str().unwrap().to_string(),
-            file: file_path.to_string_lossy().to_string(),
-            name: None,
-            requires: file_requires.clone(),
-            sql: file_sql,
-        });
-    }
-
-    Ok(blocks)
 }

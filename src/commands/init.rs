@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::path::{Path};
 use crate::utils::db;
-use crate::utils::fs::{self, Block};
+use crate::utils::fs;
+use crate::utils::blocks;
 use crate::config::Config;
 
 /// Initialize the database
@@ -37,13 +37,13 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
     println!("Found schemas: {:?}", schemas);
 
     // // 3) Read all files and parse blocks per schema
-    let mut blocks: Vec<Block> = vec![];
+    let mut blocks: Vec<blocks::Block> = vec![];
     let mut files_count = 0;
     for schema in &schemas {
         let files = fs::read_schema_files(sql_base, &version, schema)?;
         files_count += files.len();
-        for file_path in files {
-            let bks = fs::parse_blocks(&file_path)?;
+        for file in files {
+            let bks = blocks::parse_blocks(schema, &file)?;
             blocks.extend(bks);
         }
     }
