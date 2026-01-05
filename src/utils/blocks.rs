@@ -30,7 +30,7 @@ fn is_valid_absolute_block_id(s: &str) -> bool {
 }
 
 fn is_valid_filepath(s: &str) -> bool {
-    s.starts_with("./") || s.starts_with("/")
+    (s.starts_with("./") || s.starts_with("/")) && !s.contains('\\')
 }
 
 fn transform_dep(dep: &str, schema: &str) -> Result<String, String> {
@@ -181,6 +181,54 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
     Ok(blocks)
 }
 
+/// Normalize filepaths in block requirements to absolute block identifiers
+pub fn normalize(blocks: &mut Vec<Block>, sql_base: &str, version: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    // Build a map from normalized filepath to list of absolute block IDs
+    let mut file_to_blocks: HashMap<String, Vec<String>> = HashMap::new();
+    for block in &*blocks {
+        let abs_id = format!("{}.{}", block.schema, block.name);
+        file_to_blocks.entry(block.file.clone()).or_insert(vec![]).push(abs_id);
+    }
+
+    // For each block, transform filepath requires
+    for block in blocks {
+        let mut new_requires = vec![];
+        for req in &block.requires {
+            if is_valid_filepath(req) {
+                // Resolve the filepath
+                let resolved_path = if req.starts_with('/') {
+                    // Absolute: already relative to sql_base/version root
+                    req.to_string()
+                } else if req.starts_with("./") {
+                    // Relative: relative to block's file parent
+                    let block_path = Path::new(&block.file);
+                    let parent = block_path.parent().unwrap_or(Path::new("/"));
+                    parent.join(&req[2..]).to_string_lossy().replace('\\', "/")
+                } else {
+                    continue; // Should not happen due to is_valid_filepath
+                };
+                // Normalize to POSIX
+                let normalized_path = format!("/{}", resolved_path.trim_start_matches('/'));
+                // Find matching blocks
+                if let Some(block_ids) = file_to_blocks.get(&normalized_path) {
+                    new_requires.extend(block_ids.clone());
+                } else {
+                    return Err(format!("No blocks found for filepath: {}", req).into());
+                }
+            } else {
+                // Keep as is
+                new_requires.push(req.clone());
+            }
+        }
+        block.requires = new_requires;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,5 +308,38 @@ mod tests {
         assert!(blocks[4].requires.contains(&"test_schema.name".to_string()));
         assert!(blocks[4].requires.contains(&"test_schema.nameT".to_string()));
         assert!(blocks[4].requires.iter().filter(|r| r.starts_with("block_")).count() == 2);
+    }
+
+    #[test]
+    fn test_normalize() {
+        let mut blocks = vec![
+            Block {
+                schema: "public".to_string(),
+                file: "/public/schema.sql".to_string(),
+                name: "block1".to_string(),
+                requires: vec!["./other.sql".to_string()],
+                sql: "SELECT 1;".to_string(),
+            },
+            Block {
+                schema: "public".to_string(),
+                file: "/public/other.sql".to_string(),
+                name: "block2".to_string(),
+                requires: vec![],
+                sql: "SELECT 2;".to_string(),
+            },
+            Block {
+                schema: "public".to_string(),
+                file: "/public/third.sql".to_string(),
+                name: "block3".to_string(),
+                requires: vec!["/public/other.sql".to_string()],
+                sql: "SELECT 3;".to_string(),
+            },
+        ];
+
+        normalize(&mut blocks, "sql", "next").unwrap();
+
+        assert_eq!(blocks[0].requires, vec!["public.block2".to_string()]);
+        assert_eq!(blocks[1].requires, Vec::<String>::new());
+        assert_eq!(blocks[2].requires, vec!["public.block2".to_string()]);
     }
 }

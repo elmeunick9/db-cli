@@ -63,20 +63,23 @@ pub struct FileContent {
 
 /// Read all SQL files for a given schema (recursively optional). Returns Vec<FileContent>
 pub fn read_schema_files(sql_base: &str, version: &str, schema: &str) -> Result<Vec<FileContent>, Box<dyn std::error::Error>> {
-    let base = Path::new(sql_base).join(version).join(schema);
+    let base = Path::new(sql_base).join(version);
     let mut files = vec![];
     if !base.exists() {
         return Ok(files);
     }
-    for entry in fs::read_dir(base)? {
+    for entry in fs::read_dir(base.join(schema))? {
         let e = entry?;
         let p = e.path();
         if p.is_file() {
             if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
                 if ext == "sql" {
                     let content = fs::read_to_string(&p)?;
+                    // Compute full path from sql_base/version root, POSIX style
+                    let relative_path = p.strip_prefix(&base)?;
+                    let posix_path = format!("/{}", relative_path.to_string_lossy().replace('\\', "/"));
                     files.push(FileContent {
-                        path: p,
+                        path: PathBuf::from(posix_path),
                         content,
                     });
                 }

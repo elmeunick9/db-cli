@@ -50,6 +50,9 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
 
     println!("Found {} files and {} blocks", files_count, blocks.len());
 
+    // Normalize filepaths in requirements to absolute block identifiers
+    blocks::normalize(&mut blocks, sql_base, &version)?;
+
     for block in &blocks {
         if !block.file.ends_with("schema.sql") {
             continue;
