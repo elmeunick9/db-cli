@@ -1,6 +1,50 @@
 use serde::{Deserialize, Serialize};
 use rand::random;
 
+fn is_valid_relative_block_id(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let chars: Vec<char> = s.chars().collect();
+    if !chars[0].is_alphabetic() && chars[0] != '_' {
+        return false;
+    }
+    for &c in &chars {
+        if !c.is_alphanumeric() && c != '_' {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_valid_absolute_block_id(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    for part in s.split('.') {
+        if !is_valid_relative_block_id(part) {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_valid_filepath(s: &str) -> bool {
+    s.starts_with("./") || s.starts_with("/")
+}
+
+fn transform_dep(dep: &str, schema: &str) -> Result<String, String> {
+    if is_valid_relative_block_id(dep) {
+        Ok(format!("{}.{}", schema, dep))
+    } else if is_valid_absolute_block_id(dep) {
+        Ok(dep.to_string())
+    } else if is_valid_filepath(dep) {
+        Ok(dep.to_string())
+    } else {
+        Err(format!("Invalid dependency: {}", dep))
+    }
+}
+
 /// Represents a parsed block from SQL content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
@@ -27,11 +71,12 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
         if trimmed.starts_with("-- @requires") {
             // parse requires
             if let Some(req) = trimmed.split_whitespace().nth(2) {
-                let dep = req.trim().to_string();
+                let dep = req.trim();
+                let transformed = transform_dep(dep, schema)?;
                 if in_block.is_some() {
-                    current_requires.push(dep);
+                    current_requires.push(transformed);
                 } else {
-                    file_requires.push(dep);
+                    file_requires.push(transformed);
                 }
             }
             continue;
@@ -41,7 +86,13 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
             if !file_sql.trim().is_empty() {
                 let name = format!("block_{:x}", random::<u64>());
                 let mut requires = file_requires.clone();
-                requires.extend(block_names.clone());
+                for bn in &block_names {
+                    if is_valid_relative_block_id(bn) && !bn.starts_with("block_") {
+                        requires.push(format!("{}.{}", schema, bn));
+                    } else {
+                        requires.push(bn.clone());
+                    }
+                }
                 let blk = Block {
                     schema: schema.to_string(),
                     file: file_content.path.to_string_lossy().to_string(),
@@ -54,8 +105,11 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
                 file_sql.clear();
             }
             // start block
-            if let Some(name) = trimmed.split_whitespace().nth(2) {
-                in_block = Some(name.to_string());
+            if let Some(name_str) = trimmed.split_whitespace().nth(2) {
+                if !is_valid_relative_block_id(name_str) {
+                    return Err(format!("Invalid block name: {}", name_str).into());
+                }
+                in_block = Some(name_str.to_string());
                 current_sql.clear();
                 current_requires.clear();
             }
@@ -70,7 +124,13 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
             };
             let mut requires = file_requires.clone();
             requires.extend(current_requires.clone());
-            requires.extend(block_names.clone());
+            for bn in &block_names {
+                if is_valid_relative_block_id(bn) && !bn.starts_with("block_") {
+                    requires.push(format!("{}.{}", schema, bn));
+                } else {
+                    requires.push(bn.clone());
+                }
+            }
             let blk = Block {
                 schema: schema.to_string(),
                 file: file_content.path.to_string_lossy().to_string(),
@@ -100,7 +160,13 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
     if !file_sql.trim().is_empty() {
         let name = format!("block_{:x}", random::<u64>());
         let mut requires = file_requires.clone();
-        requires.extend(block_names.clone());
+        for bn in &block_names {
+            if is_valid_relative_block_id(bn) && !bn.starts_with("block_") {
+                requires.push(format!("{}.{}", schema, bn));
+            } else {
+                requires.push(bn.clone());
+            }
+        }
         let blk = Block {
             schema: schema.to_string(),
             file: file_content.path.to_string_lossy().to_string(),
@@ -150,49 +216,49 @@ mod tests {
         let blocks = parse_blocks("test_schema", &file_content).unwrap();
 
         // Expected blocks:
-        // 1. Unnamed block 1: requires a,b
-        // 2. Named block "name": requires a,b,c + block_1
-        // 3. Unnamed block 2: requires a,b + block_1,block_name
-        // 4. Named block "nameT": requires a,b + block_1,block_name,block_2
-        // 5. Unnamed block 3: requires a,b + block_1,block_name,block_2,nameT
+        // 1. Unnamed block 1: requires test_schema.a,test_schema.b
+        // 2. Named block "name": requires test_schema.a,test_schema.b,test_schema.c + block_1
+        // 3. Unnamed block 2: requires test_schema.a,test_schema.b + block_1,test_schema.name
+        // 4. Named block "nameT": requires test_schema.a,test_schema.b + block_1,test_schema.name,block_2
+        // 5. Unnamed block 3: requires test_schema.a,test_schema.b + block_1,test_schema.name,block_2,test_schema.nameT
 
         assert_eq!(blocks.len(), 5);
 
         // Block 1: unnamed
         assert!(blocks[0].name.starts_with("block_"));
-        assert_eq!(blocks[0].requires, vec!["a", "b"]);
+        assert_eq!(blocks[0].requires, vec!["test_schema.a", "test_schema.b"]);
 
         // Block 2: named "name"
         assert_eq!(blocks[1].name, "name");
         assert_eq!(blocks[1].requires.len(), 4);
-        assert!(blocks[1].requires.contains(&"a".to_string()));
-        assert!(blocks[1].requires.contains(&"b".to_string()));
-        assert!(blocks[1].requires.contains(&"c".to_string()));
+        assert!(blocks[1].requires.contains(&"test_schema.a".to_string()));
+        assert!(blocks[1].requires.contains(&"test_schema.b".to_string()));
+        assert!(blocks[1].requires.contains(&"test_schema.c".to_string()));
         assert!(blocks[1].requires.iter().any(|r| r.starts_with("block_")));
 
         // Block 3: unnamed
         assert!(blocks[2].name.starts_with("block_"));
         assert_eq!(blocks[2].requires.len(), 4);
-        assert!(blocks[2].requires.contains(&"a".to_string()));
-        assert!(blocks[2].requires.contains(&"b".to_string()));
-        assert!(blocks[2].requires.contains(&"name".to_string()));
+        assert!(blocks[2].requires.contains(&"test_schema.a".to_string()));
+        assert!(blocks[2].requires.contains(&"test_schema.b".to_string()));
+        assert!(blocks[2].requires.contains(&"test_schema.name".to_string()));
         assert!(blocks[2].requires.iter().any(|r| r.starts_with("block_")));
 
         // Block 4: named "nameT"
         assert_eq!(blocks[3].name, "nameT");
         assert_eq!(blocks[3].requires.len(), 5);
-        assert!(blocks[3].requires.contains(&"a".to_string()));
-        assert!(blocks[3].requires.contains(&"b".to_string()));
-        assert!(blocks[3].requires.contains(&"name".to_string()));
+        assert!(blocks[3].requires.contains(&"test_schema.a".to_string()));
+        assert!(blocks[3].requires.contains(&"test_schema.b".to_string()));
+        assert!(blocks[3].requires.contains(&"test_schema.name".to_string()));
         assert!(blocks[3].requires.iter().filter(|r| r.starts_with("block_")).count() == 2);
 
         // Block 5: unnamed
         assert!(blocks[4].name.starts_with("block_"));
         assert_eq!(blocks[4].requires.len(), 6);
-        assert!(blocks[4].requires.contains(&"a".to_string()));
-        assert!(blocks[4].requires.contains(&"b".to_string()));
-        assert!(blocks[4].requires.contains(&"name".to_string()));
-        assert!(blocks[4].requires.contains(&"nameT".to_string()));
+        assert!(blocks[4].requires.contains(&"test_schema.a".to_string()));
+        assert!(blocks[4].requires.contains(&"test_schema.b".to_string()));
+        assert!(blocks[4].requires.contains(&"test_schema.name".to_string()));
+        assert!(blocks[4].requires.contains(&"test_schema.nameT".to_string()));
         assert!(blocks[4].requires.iter().filter(|r| r.starts_with("block_")).count() == 2);
     }
 }
