@@ -1,0 +1,17 @@
+# DB-CLI Configuration
+mode = "dev"
+base = "sql"
+
+[database]
+    name = "storymoar"
+    host = "localhost"
+    port = 5432
+    ssl=false
+    
+    [[sa]]
+        user = "postgres"
+        password = "postgres"
+
+    [[api]]
+        user = "api"
+        password = "0000"

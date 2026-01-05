@@ -1,5 +1,9 @@
 use clap::{Parser, Subcommand};
 
+mod config;
+mod commands;
+mod utils;
+
 #[derive(Parser)]
 #[command(name = "db")]
 #[command(about = "DB-CLI - manage SQL databases", long_about = None)]
@@ -33,12 +37,25 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    match cli.command {
-        Commands::Init { version } => {
-            println!("TODO: init {:?}", version.unwrap_or_else(|| "next".to_string()));
+    // Load configuration before running any commands
+    let config = match config::Config::load(None) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Failed to load configuration: {}", e);
+            std::process::exit(1);
         }
+    };
+
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+    
+    let result = rt.block_on(async {
+        match cli.command {
+            Commands::Init { version } => {
+                commands::init::execute(&config, version).await
+            }
         Commands::Plan { version } => {
             println!("TODO: plan {:?}", version.unwrap_or_else(|| "next".to_string()));
+            Ok(())
         }
         Commands::Migration { plan, apply, version } => {
             if plan {
@@ -48,15 +65,25 @@ fn main() {
             } else {
                 println!("TODO: migration {:?}", version.unwrap_or_else(|| "next".to_string()));
             }
+            Ok(())
         }
         Commands::Release { version } => {
             println!("TODO: release {:?}", version.unwrap_or_else(|| "next".to_string()));
+            Ok(())
         }
         Commands::Check { version } => {
             println!("TODO: check {:?}", version.unwrap_or_else(|| "next".to_string()));
+            Ok(())
         }
         Commands::Generate { version } => {
             println!("TODO: generate {:?}", version.unwrap_or_else(|| "next".to_string()));
+            Ok(())
         }
+        }
+    });
+    
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
     }
 }
