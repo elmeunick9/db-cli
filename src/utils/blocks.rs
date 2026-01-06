@@ -45,6 +45,57 @@ fn transform_dep(dep: &str, schema: &str) -> Result<String, String> {
     }
 }
 
+/// Parse a directive from a line.
+/// Returns Ok(Some((directive_name, rest_of_line))) if it's a valid directive,
+/// Ok(None) if not a directive,
+/// Err if it's a directive but invalid name.
+fn parse_directive(line: &str) -> Result<Option<(String, String)>, String> {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let mut chars = trimmed.chars().peekable();
+    // Skip leading dashes
+    if !chars.peek().map_or(false, |&c| c == '-') {
+        return Ok(None);
+    }
+    while chars.peek() == Some(&'-') {
+        chars.next();
+    }
+    // Skip spaces after dashes
+    while chars.peek() == Some(&' ') {
+        chars.next();
+    }
+    // Check for @
+    if chars.next() != Some('@') {
+        return Ok(None);
+    }
+    // Skip spaces after @
+    while chars.peek() == Some(&' ') {
+        chars.next();
+    }
+    // Collect directive name
+    let mut directive = String::new();
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            break;
+        }
+        directive.push(c);
+        chars.next();
+    }
+    if directive.is_empty() {
+        return Ok(None);
+    }
+    // Validate directive name
+    let valid_directives = ["block", "requires", "require", "endblock"];
+    if !valid_directives.contains(&directive.as_str()) {
+        return Err(format!("Unknown directive: {}", directive));
+    }
+    // Rest of the line
+    let rest: String = chars.collect();
+    Ok(Some((directive, rest.trim_start().to_string())))
+}
+
 /// Represents a parsed block from SQL content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
@@ -69,88 +120,93 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
     let mut current_block_start_line: Option<usize> = None;
 
     for (line_number, line) in file_content.content.lines().enumerate() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("-- @requires") || trimmed.starts_with("-- @require") {
-            // parse requires
-            if let Some(req) = trimmed.split_whitespace().nth(2) {
-                let dep = req.trim();
-                let transformed = transform_dep(dep, schema)?;
+        match parse_directive(line)? {
+            Some((directive, rest)) => {
+                match directive.as_str() {
+                    "requires" | "require" => {
+                        // parse requires
+                        if let Some(req) = rest.split_whitespace().next() {
+                            let dep = req.trim();
+                            let transformed = transform_dep(dep, schema)?;
+                            if in_block.is_some() {
+                                current_requires.push(transformed);
+                            } else {
+                                file_requires.push(transformed);
+                            }
+                        }
+                    }
+                    "block" => {
+                        // If there's accumulated file_sql, create a block for it
+                        if !file_sql.trim().is_empty() {
+                            let name = format!("{}.block_{:x}", schema, random::<u64>());
+                            let mut requires = file_requires.clone();
+                            for bn in &block_names {
+                                requires.push(bn.clone());
+                            }
+                            let blk = Block {
+                                schema: schema.to_string(),
+                                file: file_content.path.to_string_lossy().to_string(),
+                                name: name.clone(),
+                                requires,
+                                sql: file_sql.clone(),
+                                line_number: current_block_start_line.unwrap_or(line_number + 1),
+                            };
+                            blocks.push(blk);
+                            block_names.push(name);
+                            file_sql.clear();
+                        }
+                        // start block
+                        if let Some(name_str) = rest.split_whitespace().next() {
+                            if !is_valid_relative_block_id(name_str) {
+                                return Err(format!("Invalid block name: {}", name_str).into());
+                            }
+                            in_block = Some(format!("{}.{}", schema, name_str));
+                            current_block_start_line = Some(line_number + 1);
+                            current_sql.clear();
+                            current_requires.clear();
+                        }
+                    }
+                    "endblock" => {
+                        // end the block
+                        let name = if let Some(n) = in_block.clone() {
+                            n
+                        } else {
+                            format!("{}.block_{:x}", schema, random::<u64>())
+                        };
+                        let mut requires = file_requires.clone();
+                        requires.extend(current_requires.clone());
+                        for bn in &block_names {
+                            requires.push(bn.clone());
+                        }
+                        let blk = Block {
+                            schema: schema.to_string(),
+                            file: file_content.path.to_string_lossy().to_string(),
+                            name: name.clone(),
+                            requires,
+                            sql: current_sql.clone(),
+                            line_number: current_block_start_line.unwrap_or(line_number + 1),
+                        };
+                        blocks.push(blk);
+                        block_names.push(name);
+                        in_block = None;
+                        current_block_start_line = None;
+                        current_sql.clear();
+                        current_requires.clear();
+                    }
+                    _ => unreachable!(), // parse_directive already validates
+                }
+                continue;
+            }
+            None => {
+                // Append SQL to current context
                 if in_block.is_some() {
-                    current_requires.push(transformed);
+                    current_sql.push_str(line);
+                    current_sql.push('\n');
                 } else {
-                    file_requires.push(transformed);
+                    file_sql.push_str(line);
+                    file_sql.push('\n');
                 }
             }
-            continue;
-        }
-        if trimmed.starts_with("-- @block") {
-            // If there's accumulated file_sql, create a block for it
-            if !file_sql.trim().is_empty() {
-                let name = format!("{}.block_{:x}", schema, random::<u64>());
-                let mut requires = file_requires.clone();
-                for bn in &block_names {
-                    requires.push(bn.clone());
-                }
-                let blk = Block {
-                    schema: schema.to_string(),
-                    file: file_content.path.to_string_lossy().to_string(),
-                    name: name.clone(),
-                    requires,
-                    sql: file_sql.clone(),
-                    line_number: current_block_start_line.unwrap_or(line_number + 1),
-                };
-                blocks.push(blk);
-                block_names.push(name);
-                file_sql.clear();
-            }
-            // start block
-            if let Some(name_str) = trimmed.split_whitespace().nth(2) {
-                if !is_valid_relative_block_id(name_str) {
-                    return Err(format!("Invalid block name: {}", name_str).into());
-                }
-                in_block = Some(format!("{}.{}", schema, name_str));
-                current_block_start_line = Some(line_number + 1);
-                current_sql.clear();
-                current_requires.clear();
-            }
-            continue;
-        }
-        if trimmed.starts_with("-- @endblock") {
-            // end the block
-            let name = if let Some(n) = in_block.clone() {
-                n
-            } else {
-                format!("{}.block_{:x}", schema, random::<u64>())
-            };
-            let mut requires = file_requires.clone();
-            requires.extend(current_requires.clone());
-            for bn in &block_names {
-                requires.push(bn.clone());
-            }
-            let blk = Block {
-                schema: schema.to_string(),
-                file: file_content.path.to_string_lossy().to_string(),
-                name: name.clone(),
-                requires,
-                sql: current_sql.clone(),
-                line_number: current_block_start_line.unwrap_or(line_number + 1),
-            };
-            blocks.push(blk);
-            block_names.push(name);
-            in_block = None;
-            current_block_start_line = None;
-            current_sql.clear();
-            current_requires.clear();
-            continue;
-        }
-
-        // Append SQL to current context
-        if in_block.is_some() {
-            current_sql.push_str(line);
-            current_sql.push('\n');
-        } else {
-            file_sql.push_str(line);
-            file_sql.push('\n');
         }
     }
 
@@ -317,7 +373,7 @@ mod tests {
             Block {
                 schema: "public".to_string(),
                 file: "/public/schema.sql".to_string(),
-                name: "block1".to_string(),
+                name: "public.block1".to_string(),
                 requires: vec!["./other.sql".to_string()],
                 sql: "SELECT 1;".to_string(),
                 line_number: 1,
@@ -325,7 +381,7 @@ mod tests {
             Block {
                 schema: "public".to_string(),
                 file: "/public/other.sql".to_string(),
-                name: "block2".to_string(),
+                name: "public.block2".to_string(),
                 requires: vec![],
                 sql: "SELECT 2;".to_string(),
                 line_number: 1,
@@ -333,7 +389,7 @@ mod tests {
             Block {
                 schema: "public".to_string(),
                 file: "/public/third.sql".to_string(),
-                name: "block3".to_string(),
+                name: "public.block3".to_string(),
                 requires: vec!["/public/other.sql".to_string()],
                 sql: "SELECT 3;".to_string(),
                 line_number: 1,

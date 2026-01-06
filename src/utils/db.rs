@@ -218,7 +218,7 @@ mod tests {
             Block {
                 schema: "test".to_string(),
                 file: "test.sql".to_string(),
-                name: "a".to_string(),
+                name: "test.a".to_string(),
                 requires: vec!["test.b".to_string()],
                 sql: "SELECT 1;".to_string(),
                 line_number: 20,
@@ -226,7 +226,7 @@ mod tests {
             Block {
                 schema: "test".to_string(),
                 file: "test.sql".to_string(),
-                name: "b".to_string(),
+                name: "test.b".to_string(),
                 requires: vec!["test.a".to_string()],
                 sql: "SELECT 2;".to_string(),
                 line_number: 10,
