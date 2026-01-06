@@ -70,7 +70,7 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
 
     for (line_number, line) in file_content.content.lines().enumerate() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("-- @requires") {
+        if trimmed.starts_with("-- @requires") || trimmed.starts_with("-- @require") {
             // parse requires
             if let Some(req) = trimmed.split_whitespace().nth(2) {
                 let dep = req.trim();

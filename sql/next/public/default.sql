@@ -1,3 +1,4 @@
+-- @requires /auth/default.sql
 INSERT INTO "story" 
     ("id", "created_at", "updated_at", "author", "title", "subtitle", "summary", "views", "image", "media", "approved") 
 VALUES

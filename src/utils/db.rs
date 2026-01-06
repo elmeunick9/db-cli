@@ -5,11 +5,30 @@ use crate::utils::blocks::Block;
 /// Get a database connection pool from configuration
 pub async fn get_db_pool(config: &Config) -> Result<sqlx::PgPool, sqlx::Error> {
     let database_url = config.database_url();
-    
+
     PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
         .await
+}
+
+/// Execute a prepared SQL statement
+pub async fn run(pool: &sqlx::PgPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
+    if config.log_sql {
+        println!("{};", sql);
+    }
+    sqlx::query(sql).execute(pool).await?;
+    Ok(())
+}
+
+/// Execute a raw SQL statement
+pub async fn run_raw(pool: &sqlx::PgPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
+    if config.log_sql {
+        println!("{}", sql);
+        println!();
+    }
+    sqlx::raw_sql(sql).execute(pool).await?;
+    Ok(())
 }
 
 /// Create a database, using the connection in Config (connects to the maintenance DB)
@@ -32,17 +51,17 @@ pub async fn create_db(
         // In dev mode, drop and recreate if exists
         if exists {
             let drop_sql = format!("DROP DATABASE \"{}\"", db_name);
-            sqlx::query(&drop_sql).execute(&pool).await?;
+            run(&pool, &maintenance, &drop_sql).await?;
         }
         let create_sql = format!("CREATE DATABASE \"{}\"", db_name);
-        sqlx::query(&create_sql).execute(&pool).await?;
+        run(&pool, &maintenance, &create_sql).await?;
     } else {
         // In production, fail if exists
         if exists {
             return Err(format!("Database '{}' already exists in production mode", db_name).into());
         }
         let create_sql = format!("CREATE DATABASE \"{}\"", db_name);
-        sqlx::query(&create_sql).execute(&pool).await?;
+        run(&pool, &maintenance, &create_sql).await?;
     }
 
     // Create API role if not exists
@@ -56,15 +75,55 @@ pub async fn create_db(
 
     if !role_exists {
         let create_role_sql = format!("CREATE ROLE \"{}\" LOGIN PASSWORD '{}'", api_user, api_password);
+        if config.log_sql {
+            println!("CREATE ROLE \"{}\" LOGIN PASSWORD 'REDACTED'", api_user)
+        }
         sqlx::query(&create_role_sql).execute(&pool).await?;
     }
 
     Ok(())
 }
 
+/// Create a schema if it doesn't exist, set sa as owner, and grant api user data permissions
+pub async fn create_schema(
+    config: &Config,
+    schema_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let pool = get_db_pool(config).await?;
+
+    // Create schema if not exists
+    let create_schema_sql = format!("CREATE SCHEMA IF NOT EXISTS \"{}\"", schema_name);
+    run(&pool, config, &create_schema_sql).await?;
+
+    // Set sa as owner
+    let sa_user = &config.database.sa.user;
+    let set_owner_sql = format!("ALTER SCHEMA \"{}\" OWNER TO \"{}\"", schema_name, sa_user);
+    run(&pool, config, &set_owner_sql).await?;
+
+    // Grant api user USAGE on schema
+    let api_user = &config.database.api.user;
+    let grant_usage_sql = format!("GRANT USAGE ON SCHEMA \"{}\" TO \"{}\"", schema_name, api_user);
+    run(&pool, config, &grant_usage_sql).await?;
+
+    // Grant data modification permissions on all existing tables in the schema
+    let grant_table_sql = format!(
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA \"{}\" TO \"{}\"",
+        schema_name, api_user
+    );
+    run(&pool, config, &grant_table_sql).await?;
+
+    // Set default privileges for future tables
+    let default_priv_sql = format!(
+        "ALTER DEFAULT PRIVILEGES FOR ROLE {} IN SCHEMA \"{}\" GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{}\"",
+        sa_user, schema_name, api_user
+    );
+    run(&pool, config, &default_priv_sql).await?;
+
+    Ok(())
+}
+
 /// Execute blocks in the correct order respecting requires dependencies
 pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let log_sql = !dry_run;
     let dry_run = if config.dry_run { true } else { dry_run };
     use std::collections::HashMap;
 
@@ -116,13 +175,12 @@ pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>, dry_run: bool)
                         format!("{}", block_map[&id].sql)
                     };
 
-                    if log_sql {
+                    if config.log_sql && !dry_run {
                         println!("-- @block {}", id);
-                        println!("{}", sql);
                     }
                     if let Some(pool) = &pool {
                         if !dry_run {
-                            sqlx::raw_sql(&sql).execute(pool).await?;
+                            run_raw(pool, config, &sql).await?;
                         }
                     }
                     

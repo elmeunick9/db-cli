@@ -18,6 +18,8 @@ pub struct Config {
     pub auto_set_search_path: bool,
     #[serde(default = "default_dry_run")]
     pub dry_run: bool,
+    #[serde(default = "default_log_sql")]
+    pub log_sql: bool,
     pub database: DatabaseConfig,
 }
 
@@ -47,6 +49,7 @@ fn default_mode() -> String { "dev".to_string() }
 fn default_base() -> String { "sql".to_string() }
 fn default_auto_set_search_path() -> bool { true }
 fn default_dry_run() -> bool { false }
+fn default_log_sql() -> bool { true }
 
 impl Default for Config {
     fn default() -> Self {
@@ -55,6 +58,7 @@ impl Default for Config {
             base: default_base(),
             auto_set_search_path: default_auto_set_search_path(),
             dry_run: default_dry_run(),
+            log_sql: default_log_sql(),
             database: DatabaseConfig {
                 host: default_host(),
                 port: default_port(),
@@ -121,6 +125,11 @@ impl Config {
         }
         if let Ok(value) = std::env::var("DB_BASE") {
             self.base = value;
+        }
+        if let Ok(value) = std::env::var("DB_LOG_SQL") {
+            if let Ok(log_sql) = value.parse() {
+                self.log_sql = log_sql;
+            }
         }
         // Also support DATABASE_URL for convenience
         if let Ok(url) = std::env::var("DATABASE_URL") {
