@@ -14,6 +14,10 @@ pub struct Config {
     pub mode: String,
     #[serde(default = "default_base")]
     pub base: String,
+    #[serde(default = "default_auto_set_search_path")]
+    pub auto_set_search_path: bool,
+    #[serde(default = "default_dry_run")]
+    pub dry_run: bool,
     pub database: DatabaseConfig,
 }
 
@@ -41,12 +45,16 @@ fn default_sa() -> User { User { user: "postgres".to_string(), password: "postgr
 fn default_api() -> User { User { user: "api".to_string(), password: "0000".to_string() } }
 fn default_mode() -> String { "dev".to_string() }
 fn default_base() -> String { "sql".to_string() }
+fn default_auto_set_search_path() -> bool { true }
+fn default_dry_run() -> bool { false }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             mode: default_mode(),
             base: default_base(),
+            auto_set_search_path: default_auto_set_search_path(),
+            dry_run: default_dry_run(),
             database: DatabaseConfig {
                 host: default_host(),
                 port: default_port(),

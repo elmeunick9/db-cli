@@ -2,7 +2,7 @@ CREATE DOMAIN uint4 AS int4 CHECK(VALUE >= 0 AND VALUE < 2147483648);
 CREATE DOMAIN url AS varchar(255);
 
 -- @block story
--- @requires user
+-- @requires auth.user
 CREATE TABLE "story_genre" (
     "id"                uuid                NOT NULL,
     "name"              varchar(80)         NOT NULL,

@@ -51,22 +51,34 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
     println!("Found {} files and {} blocks", files_count, blocks.len());
 
     // Normalize filepaths in requirements to absolute block identifiers
-    blocks::normalize(&mut blocks, sql_base, &version)?;
+    blocks::normalize(&mut blocks)?;
 
+    // Group blocks into layers based on file patterns
+    let mut layers: Vec<Vec<blocks::Block>> = vec![vec![], vec![], vec![], vec![]];
     for block in &blocks {
-        if !block.file.ends_with("schema.sql") {
-            continue;
+        let file = &block.file;
+        if file.ends_with("schema.sql") || file.ends_with(".table.sql") || file.ends_with(".function.sql") || file.ends_with(".view.sql") {
+            layers[0].push(block.clone());
+        } else if file.ends_with(".trigger.sql") || file.ends_with(".index.sql") {
+            layers[1].push(block.clone());
+        } else if file.ends_with("default.sql") {
+            layers[2].push(block.clone());
+        } else if file.ends_with("insert.sql") {
+            layers[3].push(block.clone());
         }
-        let sql_preview = if block.sql.len() > 50 {
-            format!("{}...", &block.sql[..block.sql.len().min(900)])
-        } else {
-            block.sql.clone()
-        };
-        println!("-- BLOCK {:?} --", block.name);
-        println!("schema={}, file={}, requires={:?}",
-                 block.schema, block.file, block.requires);
-        println!("{}", sql_preview);
-        println!();
+        // Note: Assuming all files match one of the patterns; if not, they are ignored
+    }
+
+    // First, check for cycles in all layers (dry run)
+    for (i, layer) in layers.iter().enumerate() {
+        println!("Checking cycles for layer {}", i + 1);
+        db::execute_blocks(config, layer, true).await?;
+    }
+
+    // Then, execute all layers
+    for (i, layer) in layers.iter().enumerate() {
+        println!("Executing layer {}", i + 1);
+        db::execute_blocks(config, layer, false).await?;
     }
 
     // // 4) Build dependency graph between blocks and files

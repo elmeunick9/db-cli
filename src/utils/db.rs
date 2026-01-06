@@ -1,5 +1,6 @@
 use sqlx::postgres::PgPoolOptions;
 use crate::config::Config;
+use crate::utils::blocks::Block;
 
 /// Get a database connection pool from configuration
 pub async fn get_db_pool(config: &Config) -> Result<sqlx::PgPool, sqlx::Error> {
@@ -59,4 +60,124 @@ pub async fn create_db(
     }
 
     Ok(())
+}
+
+/// Execute blocks in the correct order respecting requires dependencies
+pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let log_sql = !dry_run;
+    let dry_run = if config.dry_run { true } else { dry_run };
+    use std::collections::HashMap;
+
+    // Build dependency graph: key is absolute block id, value is list of dependencies
+    let mut dep_graph: HashMap<String, Vec<String>> = HashMap::new();
+    let mut block_map: HashMap<String, Block> = HashMap::new();
+
+    for block in blocks {
+        dep_graph.insert(block.name.clone(), block.requires.clone());
+        block_map.insert(block.name.clone(), block.clone());
+    }
+
+    // Validate that all dependencies exist
+    let all_block_ids: std::collections::HashSet<String> = dep_graph.keys().cloned().collect();
+    let mut missing_deps = vec![];
+    for (block_id, deps) in &dep_graph {
+        for dep in deps {
+            if !all_block_ids.contains(dep) {
+                let block = &block_map[block_id];
+                missing_deps.push(format!("Block '{}' in {}:{} requires '{}', but it does not exist", block_id, block.file, block.line_number, dep));
+            }
+        }
+    }
+    if !missing_deps.is_empty() {
+        return Err(format!("Missing dependencies:\n{}", missing_deps.join("\n")).into());
+    }
+
+    // Get pool if not dry run
+    let pool = if dry_run {
+        None
+    } else {
+        Some(get_db_pool(config).await?)
+    };
+
+    // Execute blocks in dependency order
+    while !dep_graph.is_empty() {
+        let mut removed = false;
+        let keys: Vec<String> = dep_graph.keys().cloned().collect();
+
+        for id in keys {
+            if let Some(deps) = dep_graph.get(&id) {
+                if deps.is_empty() {
+                    // Execute block
+                    // Set search path to the correct schema
+                    let set_search_path_sql = format!("SET search_path TO {};", block_map[&id].schema);
+                    let sql = if config.auto_set_search_path {
+                        format!("{}\n{}", set_search_path_sql, block_map[&id].sql)
+                    } else {
+                        format!("{}", block_map[&id].sql)
+                    };
+
+                    if log_sql {
+                        println!("-- @block {}", id);
+                        println!("{}", sql);
+                    }
+                    if let Some(pool) = &pool {
+                        if !dry_run {
+                            sqlx::raw_sql(&sql).execute(pool).await?;
+                        }
+                    }
+                    
+                    // Remove from graph
+                    dep_graph.remove(&id);
+                    // Remove this id from all other dependencies
+                    for (_, deps) in dep_graph.iter_mut() {
+                        deps.retain(|d| d != &id);
+                    }
+                    removed = true;
+                }
+            }
+        }
+
+        if !removed {
+            // Print debug info for remaining blocks and their dependencies
+            for (block_id, deps) in &dep_graph {
+                println!("Block: {} depends on: {:?}", block_id, deps);
+            }
+            return Err("Cycle detected in block dependencies".into());
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::blocks::Block;
+
+    #[tokio::test]
+    async fn test_cycle_detection_dry_run() {
+        let blocks = vec![
+            Block {
+                schema: "test".to_string(),
+                file: "test.sql".to_string(),
+                name: "a".to_string(),
+                requires: vec!["test.b".to_string()],
+                sql: "SELECT 1;".to_string(),
+                line_number: 20,
+            },
+            Block {
+                schema: "test".to_string(),
+                file: "test.sql".to_string(),
+                name: "b".to_string(),
+                requires: vec!["test.a".to_string()],
+                sql: "SELECT 2;".to_string(),
+                line_number: 10,
+            },
+        ];
+
+        let config = Config::default();
+        let result = execute_blocks(&config, &blocks, true).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().starts_with("Cycle detected in block dependencies"));
+    }
 }

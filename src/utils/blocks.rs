@@ -53,6 +53,7 @@ pub struct Block {
     pub name: String,
     pub requires: Vec<String>,
     pub sql: String,
+    pub line_number: usize,
 }
 
 /// Parse blocks and directives from a SQL file content
@@ -65,8 +66,9 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
     let mut current_sql = String::new();
     let mut current_requires: Vec<String> = vec![];
     let mut file_sql = String::new();
+    let mut current_block_start_line: Option<usize> = None;
 
-    for line in file_content.content.lines() {
+    for (line_number, line) in file_content.content.lines().enumerate() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("-- @requires") {
             // parse requires
@@ -84,14 +86,10 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
         if trimmed.starts_with("-- @block") {
             // If there's accumulated file_sql, create a block for it
             if !file_sql.trim().is_empty() {
-                let name = format!("block_{:x}", random::<u64>());
+                let name = format!("{}.block_{:x}", schema, random::<u64>());
                 let mut requires = file_requires.clone();
                 for bn in &block_names {
-                    if is_valid_relative_block_id(bn) && !bn.starts_with("block_") {
-                        requires.push(format!("{}.{}", schema, bn));
-                    } else {
-                        requires.push(bn.clone());
-                    }
+                    requires.push(bn.clone());
                 }
                 let blk = Block {
                     schema: schema.to_string(),
@@ -99,6 +97,7 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
                     name: name.clone(),
                     requires,
                     sql: file_sql.clone(),
+                    line_number: current_block_start_line.unwrap_or(line_number + 1),
                 };
                 blocks.push(blk);
                 block_names.push(name);
@@ -109,7 +108,8 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
                 if !is_valid_relative_block_id(name_str) {
                     return Err(format!("Invalid block name: {}", name_str).into());
                 }
-                in_block = Some(name_str.to_string());
+                in_block = Some(format!("{}.{}", schema, name_str));
+                current_block_start_line = Some(line_number + 1);
                 current_sql.clear();
                 current_requires.clear();
             }
@@ -120,16 +120,12 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
             let name = if let Some(n) = in_block.clone() {
                 n
             } else {
-                format!("block_{:x}", random::<u64>())
+                format!("{}.block_{:x}", schema, random::<u64>())
             };
             let mut requires = file_requires.clone();
             requires.extend(current_requires.clone());
             for bn in &block_names {
-                if is_valid_relative_block_id(bn) && !bn.starts_with("block_") {
-                    requires.push(format!("{}.{}", schema, bn));
-                } else {
-                    requires.push(bn.clone());
-                }
+                requires.push(bn.clone());
             }
             let blk = Block {
                 schema: schema.to_string(),
@@ -137,10 +133,12 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
                 name: name.clone(),
                 requires,
                 sql: current_sql.clone(),
+                line_number: current_block_start_line.unwrap_or(line_number + 1),
             };
             blocks.push(blk);
             block_names.push(name);
             in_block = None;
+            current_block_start_line = None;
             current_sql.clear();
             current_requires.clear();
             continue;
@@ -158,10 +156,10 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
 
     // If there's remaining file_sql, create a block for it
     if !file_sql.trim().is_empty() {
-        let name = format!("block_{:x}", random::<u64>());
+        let name = format!("{}.block_{:x}", schema, random::<u64>());
         let mut requires = file_requires.clone();
         for bn in &block_names {
-            if is_valid_relative_block_id(bn) && !bn.starts_with("block_") {
+            if is_valid_relative_block_id(bn) {
                 requires.push(format!("{}.{}", schema, bn));
             } else {
                 requires.push(bn.clone());
@@ -173,6 +171,7 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
             name: name.clone(),
             requires,
             sql: file_sql,
+            line_number: file_content.content.lines().count(),
         };
         blocks.push(blk);
         block_names.push(name);
@@ -181,19 +180,18 @@ pub fn parse_blocks(schema: &str, file_content: &crate::utils::fs::FileContent) 
     Ok(blocks)
 }
 
-/// Normalize filepaths in block requirements to absolute block identifiers
-pub fn normalize(blocks: &mut Vec<Block>, sql_base: &str, version: &str) -> Result<(), Box<dyn std::error::Error>> {
+/// Normalize block requirements to absolute block identifiers
+pub fn normalize(blocks: &mut Vec<Block>) -> Result<(), Box<dyn std::error::Error>> {
     use std::collections::HashMap;
     use std::path::Path;
 
     // Build a map from normalized filepath to list of absolute block IDs
     let mut file_to_blocks: HashMap<String, Vec<String>> = HashMap::new();
     for block in &*blocks {
-        let abs_id = format!("{}.{}", block.schema, block.name);
-        file_to_blocks.entry(block.file.clone()).or_insert(vec![]).push(abs_id);
+        file_to_blocks.entry(block.file.clone()).or_insert(vec![]).push(block.name.clone());
     }
 
-    // For each block, transform filepath requires
+    // For each block, transform filepath requires and relative block IDs
     for block in blocks {
         let mut new_requires = vec![];
         for req in &block.requires {
@@ -218,8 +216,11 @@ pub fn normalize(blocks: &mut Vec<Block>, sql_base: &str, version: &str) -> Resu
                 } else {
                     return Err(format!("No blocks found for filepath: {}", req).into());
                 }
+            } else if is_valid_relative_block_id(req) {
+                // Transform relative block ID to absolute
+                new_requires.push(format!("{}.{}", block.schema, req));
             } else {
-                // Keep as is
+                // Keep absolute block IDs or other as is
                 new_requires.push(req.clone());
             }
         }
@@ -273,41 +274,41 @@ mod tests {
         assert_eq!(blocks.len(), 5);
 
         // Block 1: unnamed
-        assert!(blocks[0].name.starts_with("block_"));
+        assert!(blocks[0].name.starts_with("test_schema.block_"));
         assert_eq!(blocks[0].requires, vec!["test_schema.a", "test_schema.b"]);
 
         // Block 2: named "name"
-        assert_eq!(blocks[1].name, "name");
+        assert_eq!(blocks[1].name, "test_schema.name");
         assert_eq!(blocks[1].requires.len(), 4);
         assert!(blocks[1].requires.contains(&"test_schema.a".to_string()));
         assert!(blocks[1].requires.contains(&"test_schema.b".to_string()));
         assert!(blocks[1].requires.contains(&"test_schema.c".to_string()));
-        assert!(blocks[1].requires.iter().any(|r| r.starts_with("block_")));
+        assert!(blocks[1].requires.iter().any(|r| r.starts_with("test_schema.block_")));
 
         // Block 3: unnamed
-        assert!(blocks[2].name.starts_with("block_"));
+        assert!(blocks[2].name.starts_with("test_schema.block_"));
         assert_eq!(blocks[2].requires.len(), 4);
         assert!(blocks[2].requires.contains(&"test_schema.a".to_string()));
         assert!(blocks[2].requires.contains(&"test_schema.b".to_string()));
         assert!(blocks[2].requires.contains(&"test_schema.name".to_string()));
-        assert!(blocks[2].requires.iter().any(|r| r.starts_with("block_")));
+        assert!(blocks[2].requires.iter().any(|r| r.starts_with("test_schema.block_")));
 
         // Block 4: named "nameT"
-        assert_eq!(blocks[3].name, "nameT");
+        assert_eq!(blocks[3].name, "test_schema.nameT");
         assert_eq!(blocks[3].requires.len(), 5);
         assert!(blocks[3].requires.contains(&"test_schema.a".to_string()));
         assert!(blocks[3].requires.contains(&"test_schema.b".to_string()));
         assert!(blocks[3].requires.contains(&"test_schema.name".to_string()));
-        assert!(blocks[3].requires.iter().filter(|r| r.starts_with("block_")).count() == 2);
+        assert!(blocks[3].requires.iter().filter(|r| r.starts_with("test_schema.block_")).count() == 2);
 
         // Block 5: unnamed
-        assert!(blocks[4].name.starts_with("block_"));
+        assert!(blocks[4].name.starts_with("test_schema.block_"));
         assert_eq!(blocks[4].requires.len(), 6);
         assert!(blocks[4].requires.contains(&"test_schema.a".to_string()));
         assert!(blocks[4].requires.contains(&"test_schema.b".to_string()));
         assert!(blocks[4].requires.contains(&"test_schema.name".to_string()));
         assert!(blocks[4].requires.contains(&"test_schema.nameT".to_string()));
-        assert!(blocks[4].requires.iter().filter(|r| r.starts_with("block_")).count() == 2);
+        assert!(blocks[4].requires.iter().filter(|r| r.starts_with("test_schema.block_")).count() == 2);
     }
 
     #[test]
@@ -319,6 +320,7 @@ mod tests {
                 name: "block1".to_string(),
                 requires: vec!["./other.sql".to_string()],
                 sql: "SELECT 1;".to_string(),
+                line_number: 1,
             },
             Block {
                 schema: "public".to_string(),
@@ -326,6 +328,7 @@ mod tests {
                 name: "block2".to_string(),
                 requires: vec![],
                 sql: "SELECT 2;".to_string(),
+                line_number: 1,
             },
             Block {
                 schema: "public".to_string(),
@@ -333,10 +336,11 @@ mod tests {
                 name: "block3".to_string(),
                 requires: vec!["/public/other.sql".to_string()],
                 sql: "SELECT 3;".to_string(),
+                line_number: 1,
             },
         ];
 
-        normalize(&mut blocks, "sql", "next").unwrap();
+        normalize(&mut blocks).unwrap();
 
         assert_eq!(blocks[0].requires, vec!["public.block2".to_string()]);
         assert_eq!(blocks[1].requires, Vec::<String>::new());

@@ -1,3 +1,4 @@
+-- @requires ./schema.sql
 CREATE FUNCTION "comment_vote" (comment_id uuid, author_id uuid /* of the vote */, direction smallint)
 RETURNS VOID AS $$
 DECLARE
