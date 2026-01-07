@@ -46,7 +46,7 @@ CREATE TABLE "example1" (
     "id"        uuid        ,
     "user"      uuid        ,
     PRIMARY KEY ("id"),
-    FOREIGN KEY ("user") REFERENCES "public"."user" ("id")
+    FOREIGN KEY ("user") REFERENCES "user" ("id")
 );
 
 -- @block product

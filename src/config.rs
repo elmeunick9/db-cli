@@ -18,6 +18,8 @@ pub struct Config {
     pub auto_set_search_path: bool,
     #[serde(default = "default_dry_run")]
     pub dry_run: bool,
+    #[serde(default = "default_keep_max_releases")]
+    pub keep_max_releases: usize,
     #[serde(default = "default_log_sql")]
     pub log_sql: bool,
     pub database: DatabaseConfig,
@@ -50,6 +52,7 @@ fn default_base() -> String { "sql".to_string() }
 fn default_auto_set_search_path() -> bool { true }
 fn default_dry_run() -> bool { false }
 fn default_log_sql() -> bool { true }
+fn default_keep_max_releases() -> usize { 5 }
 
 impl Default for Config {
     fn default() -> Self {
@@ -58,6 +61,7 @@ impl Default for Config {
             base: default_base(),
             auto_set_search_path: default_auto_set_search_path(),
             dry_run: default_dry_run(),
+            keep_max_releases: default_keep_max_releases(),
             log_sql: default_log_sql(),
             database: DatabaseConfig {
                 host: default_host(),

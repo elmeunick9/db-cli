@@ -29,7 +29,7 @@ enum Commands {
     /// Run tests in the database
     Test { version: Option<String> },
     /// Create a new release
-    Release { version: Option<String> },
+    Release { },
     /// Run code generation
     Generate { version: Option<String> },
 }
@@ -67,9 +67,8 @@ fn main() {
             }
             Ok(())
         }
-        Commands::Release { version } => {
-            println!("TODO: release {:?}", version.unwrap_or_else(|| "next".to_string()));
-            Ok(())
+        Commands::Release {} => {
+            commands::release::execute(&config).await
         }
         Commands::Test { version } => {
             println!("TODO: check {:?}", version.unwrap_or_else(|| "next".to_string()));
