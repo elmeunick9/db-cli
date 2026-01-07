@@ -75,9 +75,9 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
             layers[0].push(block.clone());
         } else if file.ends_with(".trigger.sql") || file.ends_with(".index.sql") {
             layers[1].push(block.clone());
-        } else if file.ends_with("default.sql") {
+        } else if file.ends_with("default.sql") || file.ends_with(".default.sql") {
             layers[2].push(block.clone());
-        } else if file.ends_with("insert.sql") {
+        } else if file.ends_with("insert.sql") || file.ends_with(".insert.sql") {
             layers[3].push(block.clone());
         }
         // Note: Assuming all files match one of the patterns; if not, they are ignored

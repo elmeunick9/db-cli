@@ -26,10 +26,10 @@ enum Commands {
         apply: bool,
         version: Option<String>,
     },
+    /// Run tests in the database
+    Test { version: Option<String> },
     /// Create a new release
     Release { version: Option<String> },
-    /// Run tests/checks
-    Check { version: Option<String> },
     /// Run code generation
     Generate { version: Option<String> },
 }
@@ -71,7 +71,7 @@ fn main() {
             println!("TODO: release {:?}", version.unwrap_or_else(|| "next".to_string()));
             Ok(())
         }
-        Commands::Check { version } => {
+        Commands::Test { version } => {
             println!("TODO: check {:?}", version.unwrap_or_else(|| "next".to_string()));
             Ok(())
         }
