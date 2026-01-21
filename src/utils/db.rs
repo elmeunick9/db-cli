@@ -12,12 +12,22 @@ pub async fn get_db_pool(config: &Config) -> Result<sqlx::PgPool, sqlx::Error> {
         .await
 }
 
+fn inject_variables(sql: &str, config: &Config) -> String {
+    sql
+        .replace("{{DB_SA_USER}}", &config.database.sa.user)
+        .replace("{{DB_SA_PASSWORD}}", &config.database.sa.password)
+        .replace("{{DB_API_USER}}", &config.database.api.user)
+        .replace("{{DB_API_PASSWORD}}", &config.database.api.password)
+}
+
 /// Execute a prepared SQL statement
 pub async fn run(pool: &sqlx::PgPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
     if config.log_sql {
         println!("{};", sql);
     }
-    sqlx::query(sql).execute(pool).await?;
+    if !config.dry_run {
+        sqlx::query(&inject_variables(sql, config)).execute(pool).await?;
+    }
     Ok(())
 }
 
@@ -27,40 +37,69 @@ pub async fn run_raw(pool: &sqlx::PgPool, config: &Config, sql: &str) -> Result<
         println!("{}", sql);
         println!();
     }
-    sqlx::raw_sql(sql).execute(pool).await?;
+    if !config.dry_run {
+        sqlx::raw_sql(&inject_variables(sql, config)).execute(pool).await?;
+    }
     Ok(())
 }
 
+/// Check if the target database exists
+async fn db_exists(pool: &sqlx::PgPool, config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
+    if config.dry_run { return Ok(false); }
+
+    let db_name = &config.database.name;
+    let exists = sqlx::query("SELECT 1 FROM pg_database WHERE datname = $1")
+        .bind(db_name)
+        .fetch_optional(pool)
+        .await?
+        .is_some();
+
+    Ok(exists)
+}
+
+/// Check if the role exists
+async fn role_exists(pool: &sqlx::PgPool, config: &Config, role_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    if config.dry_run { return Ok(false); }
+
+    let exists = sqlx::query("SELECT 1 FROM pg_roles WHERE rolname = $1")
+        .bind(role_name)
+        .fetch_optional(pool)
+        .await?
+        .is_some();
+
+    Ok(exists)
+}
+
 /// Check if the target database is empty (has no user-created objects and only the public schema)
-async fn is_database_empty(config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
-    let pool = get_db_pool(config).await?;
+async fn is_database_empty(pool: &sqlx::PgPool, config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
+    if config.dry_run { return Ok(true); }
 
     // Check for user-created schemas (excluding system schemas and public)
     let schema_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1') AND schema_name != 'public'"
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await?;
 
     // Check for tables in public schema
     let table_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await?;
 
     // Check for views in public schema
     let view_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = 'public'"
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await?;
 
     // Check for functions in public schema
     let function_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'FUNCTION'"
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await?;
 
     Ok(schema_count == 0 && table_count == 0 && view_count == 0 && function_count == 0)
@@ -76,11 +115,7 @@ pub async fn create_db(
     let pool = get_db_pool(&maintenance).await?;
 
     let db_name = &config.database.name;
-    let exists = sqlx::query("SELECT 1 FROM pg_database WHERE datname = $1")
-        .bind(db_name)
-        .fetch_optional(&pool)
-        .await?
-        .is_some();
+    let exists = db_exists(&pool, &maintenance).await?;
 
     if config.is_dev() {
         // In dev mode, drop and recreate if exists
@@ -88,38 +123,30 @@ pub async fn create_db(
             let drop_sql = format!("DROP DATABASE \"{}\"", db_name);
             run(&pool, &maintenance, &drop_sql).await?;
         }
-        let create_sql = format!("CREATE DATABASE \"{}\"", db_name);
-        run(&pool, &maintenance, &create_sql).await?;
+        let sql = format!("CREATE DATABASE \"{}\"", db_name);
+        run(&pool, &maintenance, &sql).await?;
     } else {
         // In production, check if exists
         if exists {
             // Check if the database is empty
-            if is_database_empty(config).await? {
+            if is_database_empty(&pool, &maintenance).await? {
                 println!("Warning: Database '{}' already exists but is empty. Skipping CREATE DATABASE.", db_name);
             } else {
                 return Err(format!("Database '{}' already exists and is not empty in production mode", db_name).into());
             }
         } else {
-            let create_sql = format!("CREATE DATABASE \"{}\"", db_name);
-            run(&pool, &maintenance, &create_sql).await?;
+            let sql = format!("CREATE DATABASE \"{}\"", db_name);
+            run(&pool, &maintenance, &sql).await?;
         }
     }
 
     // Create API role if not exists
     let api_user = &config.database.api.user;
-    let api_password = &config.database.api.password;
-    let role_exists = sqlx::query("SELECT 1 FROM pg_roles WHERE rolname = $1")
-        .bind(api_user)
-        .fetch_optional(&pool)
-        .await?
-        .is_some();
+    let role_exists = role_exists(&pool, &maintenance, api_user).await?;
 
     if !role_exists {
-        let create_role_sql = format!("CREATE ROLE \"{}\" LOGIN PASSWORD '{}'", api_user, api_password);
-        if config.log_sql {
-            println!("CREATE ROLE \"{}\" LOGIN PASSWORD 'REDACTED'", api_user)
-        }
-        sqlx::query(&create_role_sql).execute(&pool).await?;
+        let sql = "CREATE ROLE '{{DB_API_USER}}' WITH LOGIN PASSWORD '{{DB_API_PASSWORD}}'";
+        run(&pool, config, &sql).await?;
     }
 
     Ok(())

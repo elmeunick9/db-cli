@@ -23,6 +23,9 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
 
     println!("Initializing database for version: {}", version);
     println!("Mode: {}", if config.is_dev() { "development" } else { "production" });
+    if config.dry_run {
+        println!("Dry run mode enabled.");
+    }
     println!("--------");
 
     let version_dir = Path::new(sql_base).join(&version);

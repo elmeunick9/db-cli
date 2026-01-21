@@ -15,7 +15,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Initialize the database
-    Init { version: Option<String> },
+    Init {
+        version: Option<String>,
+        #[arg(long, default_value = "false")]
+        dry_run: bool
+    },
     /// Create a migration plan
     Plan {
         #[arg(long)]
@@ -55,7 +59,11 @@ fn main() {
     
     let result = rt.block_on(async {
         match cli.command {
-            Commands::Init { version } => {
+            Commands::Init { version, dry_run } => {
+                let config = config::Config {
+                    dry_run: config.dry_run || dry_run,
+                    ..config.clone()
+                };
                 commands::init::execute(&config, version).await
             }
         Commands::Plan { from, to } => {
