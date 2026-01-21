@@ -1,3 +1,5 @@
+use tracing::{info, warn, debug};
+
 use crate::config::Config;
 use crate::utils::blocks::Block;
 
@@ -166,7 +168,7 @@ pub async fn create_db(
         if exists {
             // Check if the database is empty
             if is_database_empty(&pool, &maintenance).await? {
-                println!("Warning: Database '{}' already exists but is empty. Skipping CREATE DATABASE.", db_name);
+                warn!("Warning: Database '{}' already exists but is empty. Skipping CREATE DATABASE.", db_name);
             } else {
                 return Err(format!("Database '{}' already exists and is not empty in production mode", db_name).into());
             }
@@ -275,7 +277,7 @@ pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>) -> Result<(), 
                     };
 
                     if config.log_sql && !config.dry_run {
-                        println!("-- @block {}", id);
+                        debug!("-- @block {}", id);
                     }
 
                     run_raw(&pool, config, &sql).await?;
@@ -294,7 +296,7 @@ pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>) -> Result<(), 
         if !removed {
             // Print debug info for remaining blocks and their dependencies
             for (block_id, deps) in &dep_graph {
-                println!("Block: {} depends on: {:?}", block_id, deps);
+                info!("(Err) Block: {} depends on: {:?}", block_id, deps);
             }
             return Err("Cycle detected in block dependencies".into());
         }

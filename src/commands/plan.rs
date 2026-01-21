@@ -1,12 +1,12 @@
 use std::path::Path;
 use crate::utils::fs;
-use crate::utils::db;
 use crate::config::Config;
+use tracing::{info, warn};
 
 /// Create a migration plan
 pub async fn execute(config: &Config, from_version: Option<String>, to_version: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     if !config.is_dev() {
-        println!("Plan command is disabled in production mode.");
+        warn!("Plan command is disabled in production mode.");
         return Ok(());
     }
 
@@ -21,7 +21,7 @@ pub async fn execute(config: &Config, from_version: Option<String>, to_version: 
         from_version
     };
 
-    println!("Creating migration plan from version '{}' to '{}'", resolved_from, to_version);
+    info!("Creating migration plan from version '{}' to '{}'", resolved_from, to_version);
 
     // Check if versions exist
     let from_dir = Path::new(sql_base).join(&resolved_from);
@@ -46,7 +46,7 @@ pub async fn execute(config: &Config, from_version: Option<String>, to_version: 
     // Write migration plan to file
     let migration_file = format!("{}.sql", to_version);
     std::fs::write(&migration_file, &migration_sql)?;
-    println!("Migration plan written to: {}", migration_file);
+    info!("Migration plan written to: {}", migration_file);
 
     Ok(())
 }

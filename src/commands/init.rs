@@ -25,7 +25,7 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
     info!("Initializing database for version: {}", version);
     info!("Mode: {}", if config.is_dev() { "development" } else { "production" });
     if config.dry_run {
-        println!("Dry run mode enabled.");
+        info!("Dry run mode enabled.");
     }
     
     let version_dir = Path::new(sql_base).join(&version);
@@ -38,7 +38,9 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
     info!("Found schemas: {:?}", schemas);
     
     // 2) Create DB
-    println!("--------");
+    if config.log_sql {
+        debug!("--------");
+    }
     db::create_db(config).await?;
 
     // 3) Create schemas
@@ -100,7 +102,9 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
         db::execute_blocks(config, layer).await?;
     }
 
-    println!("------------------");
-    println!("Initialization complete");
+    if config.log_sql {
+        debug!("------------------");
+    }
+    info!("Initialization complete");
     Ok(())
 }

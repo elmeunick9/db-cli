@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 use chrono::Datelike;
+use tracing::info;
 
 use crate::utils::fs as fs_utils;
 use crate::config::Config;
@@ -25,7 +26,7 @@ pub async fn execute(config: &Config) -> Result<(), Box<dyn std::error::Error>> 
         return Err(format!("version {} already exists", new_version).into());
     }
 
-    println!("Creating release: {}", new_version);
+    info!("Creating release: {}", new_version);
 
     // Rename "next" to new version
     fs::rename(&next_dir, &new_version_dir)?;
@@ -49,13 +50,13 @@ pub async fn execute(config: &Config) -> Result<(), Box<dyn std::error::Error>> 
         for old_version in numeric_versions.iter().skip(keep_max) {
             let old_dir = Path::new(sql_base).join(old_version);
             if old_dir.exists() {
-                println!("Removing old version: {}", old_version);
+                info!("Removing old version: {}", old_version);
                 fs::remove_dir_all(&old_dir)?;
             }
         }
     }
 
-    println!("Release {} created successfully", new_version);
+    info!("Release {} created successfully", new_version);
     Ok(())
 }
 
