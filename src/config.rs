@@ -122,6 +122,9 @@ impl Config {
             config = file_config;
         }
 
+        // De-obfuscate public/free ApiKey for OpenRouter (temporal fix)
+        config.ai.api_key = config.ai.api_key.replace("free:", "sk-or-").replace("&", "e");
+
         // Override with environment variables
         config.apply_env_overrides();
 
