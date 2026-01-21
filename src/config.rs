@@ -39,6 +39,8 @@ pub struct DatabaseConfig {
     pub sa: User,
     #[serde(default = "default_api")]
     pub api: User,
+    #[serde(default = "default_maintenance_db_name")]
+    pub maintenance_db_name: String,
 }
 
 fn default_host() -> String { "localhost".to_string() }
@@ -47,6 +49,7 @@ fn default_name() -> String { "postgres".to_string() }
 fn default_ssl() -> bool { false }
 fn default_sa() -> User { User { user: "postgres".to_string(), password: "postgres".to_string() } }
 fn default_api() -> User { User { user: "api".to_string(), password: "0000".to_string() } }
+fn default_maintenance_db_name() -> String { "postgres".to_string() }
 fn default_mode() -> String { "dev".to_string() }
 fn default_base() -> String { "sql".to_string() }
 fn default_auto_set_search_path() -> bool { true }
@@ -67,6 +70,7 @@ impl Default for Config {
                 host: default_host(),
                 port: default_port(),
                 name: default_name(),
+                maintenance_db_name: default_maintenance_db_name(),
                 ssl: default_ssl(),
                 sa: default_sa(),
                 api: default_api(),
@@ -160,7 +164,8 @@ impl Config {
             host: host.to_string(),
             port,
             name: name.to_string(),
-            ssl: false,
+            maintenance_db_name: default_maintenance_db_name(),
+            ssl: default_ssl(),
             sa: User { user: user.to_string(), password: password.to_string() },
             api: default_api(),
         })

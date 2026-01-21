@@ -31,13 +31,48 @@ pub async fn run_raw(pool: &sqlx::PgPool, config: &Config, sql: &str) -> Result<
     Ok(())
 }
 
+/// Check if the target database is empty (has no user-created objects and only the public schema)
+async fn is_database_empty(config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
+    let pool = get_db_pool(config).await?;
+
+    // Check for user-created schemas (excluding system schemas and public)
+    let schema_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1') AND schema_name != 'public'"
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    // Check for tables in public schema
+    let table_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    // Check for views in public schema
+    let view_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = 'public'"
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    // Check for functions in public schema
+    let function_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'FUNCTION'"
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    Ok(schema_count == 0 && table_count == 0 && view_count == 0 && function_count == 0)
+}
+
 /// Create a database, using the connection in Config (connects to the maintenance DB)
 pub async fn create_db(
     config: &Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Connect to maintenance DB (postgres) to create or manage target DB
+    // Connect to maintenance DB to create or manage target DB
     let mut maintenance = config.clone();
-    maintenance.database.name = "postgres".to_string();
+    maintenance.database.name = config.database.maintenance_db_name.clone();
     let pool = get_db_pool(&maintenance).await?;
 
     let db_name = &config.database.name;
@@ -56,12 +91,18 @@ pub async fn create_db(
         let create_sql = format!("CREATE DATABASE \"{}\"", db_name);
         run(&pool, &maintenance, &create_sql).await?;
     } else {
-        // In production, fail if exists
+        // In production, check if exists
         if exists {
-            return Err(format!("Database '{}' already exists in production mode", db_name).into());
+            // Check if the database is empty
+            if is_database_empty(config).await? {
+                println!("Warning: Database '{}' already exists but is empty. Skipping CREATE DATABASE.", db_name);
+            } else {
+                return Err(format!("Database '{}' already exists and is not empty in production mode", db_name).into());
+            }
+        } else {
+            let create_sql = format!("CREATE DATABASE \"{}\"", db_name);
+            run(&pool, &maintenance, &create_sql).await?;
         }
-        let create_sql = format!("CREATE DATABASE \"{}\"", db_name);
-        run(&pool, &maintenance, &create_sql).await?;
     }
 
     // Create API role if not exists
