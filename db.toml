@@ -19,5 +19,5 @@ base = "sql"
 [ai]
     enabled = true
     provider = "OpenRouter"
-    model = "arcee-ai/trinity-mini:free"
+    model = "minimax/minimax-m2.1"
     api_key = "free:v1-f7fdccfba536719bce3c7016&e35e130f72c65a723f2a1ad52bd8faa9a71a0&3"

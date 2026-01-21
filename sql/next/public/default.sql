@@ -1,6 +1,6 @@
 -- @requires /auth/default.sql
 INSERT INTO "story" 
-    ("id", "created_at", "updated_at", "author", "title", "subtitle", "summary", "views", "image", "media", "approved") 
+    ("id", "created_at", "updated_at", "author_id", "title", "subtitle", "summary", "views", "image", "media", "approved") 
 VALUES
     (
         '432c4909-c773-48b9-841d-c29b0ec7ab41', 

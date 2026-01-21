@@ -6,7 +6,7 @@ CREATE DOMAIN url AS varchar(255);
 CREATE TABLE "story_genre" (
     "id"                uuid                NOT NULL,
     "name"              varchar(80)         NOT NULL,
-    "description"       text                NOT NULL DEFAULT '',
+    "description"       text                NOT NULL DEFAULT 'a',
     PRIMARY KEY ("id"),
     UNIQUE ("name")
 );

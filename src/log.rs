@@ -19,6 +19,7 @@ pub fn init_logging(config: &Config) {
 
     let subscriber = Registry::default()
         .with(sql_filter)
+        .with(EnvFilter::new("debug,h2=warn,hyper=warn,reqwest=warn"))
         .with(stdout_layer);
 
     tracing::subscriber::set_global_default(subscriber)

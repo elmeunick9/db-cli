@@ -15,7 +15,7 @@ CREATE TABLE "story" (
     "id"                uuid                NOT NULL DEFAULT gen_random_uuid(),
     "created_at"        timestamp           NOT NULL DEFAULT now(),
     "updated_at"        timestamp           ,
-    "author"            uuid                NOT NULL,
+    "author_id"         uuid                NOT NULL,
     "title"             varchar(80)         NOT NULL,
     "subtitle"          text                NOT NULL DEFAULT '',
     "summary"           text                NOT NULL DEFAULT '',
@@ -23,6 +23,7 @@ CREATE TABLE "story" (
     "image"             url                 ,
     "media"             uuid                ,
     "approved"          boolean             NOT NULL DEFAULT false,
+    "author"            boolean             NOT NULL DEFAULT false,
     PRIMARY KEY ("id"),
     FOREIGN KEY ("author") REFERENCES "auth"."user" ("id")
 );
