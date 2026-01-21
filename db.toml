@@ -15,3 +15,9 @@ base = "sql"
     [[api]]
         user = "api"
         password = "0000"
+
+[ai]
+    enabled = true
+    provider = "OpenRouter"
+    model = "arcee-ai/trinity-mini:free"
+    api_key = "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"

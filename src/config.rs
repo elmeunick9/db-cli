@@ -2,6 +2,24 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+fn default_host() -> String { "localhost".to_string() }
+fn default_port() -> u16 { 5432 }
+fn default_name() -> String { "postgres".to_string() }
+fn default_ssl() -> bool { false }
+fn default_sa() -> User { User { user: "postgres".to_string(), password: "postgres".to_string() } }
+fn default_api() -> User { User { user: "api".to_string(), password: "0000".to_string() } }
+fn default_maintenance_db_name() -> String { "postgres".to_string() }
+fn default_mode() -> String { "dev".to_string() }
+fn default_base() -> String { "sql".to_string() }
+fn default_auto_set_search_path() -> bool { true }
+fn default_dry_run() -> bool { false }
+fn default_log_sql() -> bool { true }
+fn default_keep_max_releases() -> usize { 5 }
+fn default_ai_enabled() -> bool { true }
+fn default_ai_provider() -> String { "OpenRouter".to_string() }
+fn default_ai_model() -> String { "arcee-ai/trinity-mini:free".to_string() }
+fn default_ai_api_key() -> String { "".to_string() }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub user: String,
@@ -9,20 +27,26 @@ pub struct User {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
-    #[serde(default = "default_mode")]
-    pub mode: String,
-    #[serde(default = "default_base")]
-    pub base: String,
-    #[serde(default = "default_auto_set_search_path")]
-    pub auto_set_search_path: bool,
-    #[serde(default = "default_dry_run")]
-    pub dry_run: bool,
-    #[serde(default = "default_keep_max_releases")]
-    pub keep_max_releases: usize,
-    #[serde(default = "default_log_sql")]
-    pub log_sql: bool,
-    pub database: DatabaseConfig,
+pub struct AiConfig {
+    #[serde(default = "default_ai_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_ai_provider")]
+    pub provider: String,
+    #[serde(default = "default_ai_model")]
+    pub model: String,
+    #[serde(default = "default_ai_api_key")]
+    pub api_key: String,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        AiConfig {
+            enabled: default_ai_enabled(),
+            provider: default_ai_provider(),
+            model: default_ai_model(),
+            api_key: default_ai_api_key(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,19 +67,24 @@ pub struct DatabaseConfig {
     pub maintenance_db_name: String,
 }
 
-fn default_host() -> String { "localhost".to_string() }
-fn default_port() -> u16 { 5432 }
-fn default_name() -> String { "postgres".to_string() }
-fn default_ssl() -> bool { false }
-fn default_sa() -> User { User { user: "postgres".to_string(), password: "postgres".to_string() } }
-fn default_api() -> User { User { user: "api".to_string(), password: "0000".to_string() } }
-fn default_maintenance_db_name() -> String { "postgres".to_string() }
-fn default_mode() -> String { "dev".to_string() }
-fn default_base() -> String { "sql".to_string() }
-fn default_auto_set_search_path() -> bool { true }
-fn default_dry_run() -> bool { false }
-fn default_log_sql() -> bool { true }
-fn default_keep_max_releases() -> usize { 5 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default = "default_mode")]
+    pub mode: String,
+    #[serde(default = "default_base")]
+    pub base: String,
+    #[serde(default = "default_auto_set_search_path")]
+    pub auto_set_search_path: bool,
+    #[serde(default = "default_dry_run")]
+    pub dry_run: bool,
+    #[serde(default = "default_keep_max_releases")]
+    pub keep_max_releases: usize,
+    #[serde(default = "default_log_sql")]
+    pub log_sql: bool,
+    pub database: DatabaseConfig,
+    #[serde(default)]
+    pub ai: AiConfig,
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -75,6 +104,7 @@ impl Default for Config {
                 sa: default_sa(),
                 api: default_api(),
             },
+            ai: AiConfig::default(),
         }
     }
 }
