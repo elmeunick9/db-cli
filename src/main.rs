@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 
 mod config;
+mod log;
 mod commands;
 mod utils;
 
@@ -55,6 +56,7 @@ fn main() {
         }
     };
 
+    log::init_logging(&config);
     let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
     
     let result = rt.block_on(async {

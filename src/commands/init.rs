@@ -3,6 +3,7 @@ use crate::utils::db;
 use crate::utils::fs;
 use crate::utils::blocks;
 use crate::config::Config;
+use tracing::{info, debug};
 
 /// Initialize the database
 pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
@@ -21,24 +22,24 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
         }
     }
 
-    println!("Initializing database for version: {}", version);
-    println!("Mode: {}", if config.is_dev() { "development" } else { "production" });
+    info!("Initializing database for version: {}", version);
+    info!("Mode: {}", if config.is_dev() { "development" } else { "production" });
     if config.dry_run {
         println!("Dry run mode enabled.");
     }
-    println!("--------");
-
+    
     let version_dir = Path::new(sql_base).join(&version);
     if !version_dir.exists() {
-        return Err(format!("-- Version directory not found: {}", version_dir.display()).into());
+        return Err(format!("Version directory not found: {}", version_dir.display()).into());
     }
-
-    // 1) Create DB
-    db::create_db(config).await?;
-
-    // 2) List schemas
+    
+    // 1) List schemas
     let schemas = fs::list_schemas(sql_base, &version)?;
-    println!("-- Found schemas: {:?}", schemas);
+    info!("Found schemas: {:?}", schemas);
+    
+    // 2) Create DB
+    println!("--------");
+    db::create_db(config).await?;
 
     // 3) Create schemas
     for schema in &schemas {
@@ -65,7 +66,7 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
         }
     }
 
-    println!("-- Found {} files and {} blocks", files_count, blocks.len());
+    debug!("-- Found {} files and {} blocks", files_count, blocks.len());
 
     // Normalize filepaths in requirements to absolute block identifiers
     blocks::normalize(&mut blocks)?;
@@ -88,14 +89,15 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
 
     // First, check for cycles in all layers (dry run)
     for (i, layer) in layers.iter().enumerate() {
-        println!("-- Checking cycles for layer {}", i + 1);
-        db::execute_blocks(config, layer, true).await?;
+        debug!("-- Checking cycles for layer {}", i + 1);
+        let config = &Config { dry_run: true, log_sql: false, ..config.clone() };
+        db::execute_blocks(&config, layer).await?;
     }
 
     // Then, execute all layers
     for (i, layer) in layers.iter().enumerate() {
-        println!("-- Executing layer {}", i + 1);
-        db::execute_blocks(config, layer, false).await?;
+        debug!("-- Executing layer {}", i + 1);
+        db::execute_blocks(config, layer).await?;
     }
 
     println!("------------------");

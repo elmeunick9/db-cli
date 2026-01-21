@@ -1,15 +1,26 @@
-use sqlx::postgres::PgPoolOptions;
 use crate::config::Config;
 use crate::utils::blocks::Block;
 
-/// Get a database connection pool from configuration
-pub async fn get_db_pool(config: &Config) -> Result<sqlx::PgPool, sqlx::Error> {
-    let database_url = config.database_url();
+#[derive(Clone)]
+pub enum DbPool {
+    Postgres(sqlx::PgPool),
+    // MySql(sqlx::MySqlPool),
+    DryRun,
+}
 
-    PgPoolOptions::new()
+/// Get a database connection pool from configuration
+pub async fn get_db_pool(config: &Config) -> Result<DbPool, sqlx::Error> {
+    if config.dry_run {
+        return Ok(DbPool::DryRun);
+    }
+
+    let database_url = config.database_url();
+    let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
-        .await
+        .await?;
+        
+    Ok(DbPool::Postgres(pool))
 }
 
 fn inject_variables(sql: &str, config: &Config) -> String {
@@ -21,88 +32,113 @@ fn inject_variables(sql: &str, config: &Config) -> String {
 }
 
 /// Execute a prepared SQL statement
-pub async fn run(pool: &sqlx::PgPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
+pub async fn run(pool: &DbPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
     if config.log_sql {
-        println!("{};", sql);
+        tracing::debug!(target: "sql", "{};", sql);
     }
-    if !config.dry_run {
-        sqlx::query(&inject_variables(sql, config)).execute(pool).await?;
+
+    let sql = inject_variables(sql, config);
+    match pool {
+        DbPool::Postgres(p) => {
+            sqlx::query(&sql).execute(p).await?;
+        }
+        DbPool::DryRun => {}
     }
     Ok(())
 }
 
 /// Execute a raw SQL statement
-pub async fn run_raw(pool: &sqlx::PgPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
+pub async fn run_raw(pool: &DbPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
     if config.log_sql {
-        println!("{}", sql);
-        println!();
+        tracing::debug!(target: "sql", "{}", sql);
+        tracing::debug!(target: "sql", "");
     }
-    if !config.dry_run {
-        sqlx::raw_sql(&inject_variables(sql, config)).execute(pool).await?;
+
+    let sql = inject_variables(sql, config);
+    match pool {
+        DbPool::Postgres(p) => {
+            sqlx::raw_sql(&sql).execute(p).await?;
+        }
+        DbPool::DryRun => {}
     }
     Ok(())
 }
 
 /// Check if the target database exists
-async fn db_exists(pool: &sqlx::PgPool, config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
+async fn db_exists(pool: &DbPool, config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
     if config.dry_run { return Ok(false); }
 
-    let db_name = &config.database.name;
-    let exists = sqlx::query("SELECT 1 FROM pg_database WHERE datname = $1")
-        .bind(db_name)
-        .fetch_optional(pool)
-        .await?
-        .is_some();
+    match pool {
+        DbPool::Postgres(p) => {
+            let db_name = &config.database.name;
+            let exists = sqlx::query("SELECT 1 FROM pg_database WHERE datname = $1")
+                .bind(db_name)
+                .fetch_optional(p)
+                .await?
+                .is_some();
 
-    Ok(exists)
+            Ok(exists)
+        },
+        DbPool::DryRun => return Ok(false),
+    }
 }
 
 /// Check if the role exists
-async fn role_exists(pool: &sqlx::PgPool, config: &Config, role_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
+async fn role_exists(pool: &DbPool, config: &Config, role_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
     if config.dry_run { return Ok(false); }
 
-    let exists = sqlx::query("SELECT 1 FROM pg_roles WHERE rolname = $1")
-        .bind(role_name)
-        .fetch_optional(pool)
-        .await?
-        .is_some();
+    match pool {
+        DbPool::Postgres(p) => {
+            let exists = sqlx::query("SELECT 1 FROM pg_roles WHERE rolname = $1")
+                .bind(role_name)
+                .fetch_optional(p)
+                .await?
+                .is_some();
 
-    Ok(exists)
+            Ok(exists)
+        },
+        DbPool::DryRun => return Ok(false),
+    }
 }
 
 /// Check if the target database is empty (has no user-created objects and only the public schema)
-async fn is_database_empty(pool: &sqlx::PgPool, config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
+async fn is_database_empty(pool: &DbPool, config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
     if config.dry_run { return Ok(true); }
 
-    // Check for user-created schemas (excluding system schemas and public)
-    let schema_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1') AND schema_name != 'public'"
-    )
-    .fetch_one(pool)
-    .await?;
+    match pool {
+        DbPool::Postgres(p) => {
+            // Check for user-created schemas (excluding system schemas and public)
+            let schema_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1') AND schema_name != 'public'"
+            )
+            .fetch_one(p)
+            .await?;
 
-    // Check for tables in public schema
-    let table_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
-    )
-    .fetch_one(pool)
-    .await?;
+            // Check for tables in public schema
+            let table_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+            )
+            .fetch_one(p)
+            .await?;
 
-    // Check for views in public schema
-    let view_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = 'public'"
-    )
-    .fetch_one(pool)
-    .await?;
+            // Check for views in public schema
+            let view_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = 'public'"
+            )
+            .fetch_one(p)
+            .await?;
 
-    // Check for functions in public schema
-    let function_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'FUNCTION'"
-    )
-    .fetch_one(pool)
-    .await?;
+            // Check for functions in public schema
+            let function_count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'FUNCTION'"
+            )
+            .fetch_one(p)
+            .await?;
 
-    Ok(schema_count == 0 && table_count == 0 && view_count == 0 && function_count == 0)
+            Ok(schema_count == 0 && table_count == 0 && view_count == 0 && function_count == 0)
+        },
+        DbPool::DryRun => return Ok(true)
+    }
 }
 
 /// Create a database, using the connection in Config (connects to the maintenance DB)
@@ -191,8 +227,7 @@ pub async fn create_schema(
 }
 
 /// Execute blocks in the correct order respecting requires dependencies
-pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let dry_run = if config.dry_run { true } else { dry_run };
+pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>) -> Result<(), Box<dyn std::error::Error>> {
     use std::collections::HashMap;
 
     // Build dependency graph: key is absolute block id, value is list of dependencies
@@ -220,11 +255,7 @@ pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>, dry_run: bool)
     }
 
     // Get pool if not dry run
-    let pool = if dry_run {
-        None
-    } else {
-        Some(get_db_pool(config).await?)
-    };
+    let pool = get_db_pool(config).await?;
 
     // Execute blocks in dependency order
     while !dep_graph.is_empty() {
@@ -243,14 +274,11 @@ pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>, dry_run: bool)
                         format!("{}", block_map[&id].sql)
                     };
 
-                    if config.log_sql && !dry_run {
+                    if config.log_sql && !config.dry_run {
                         println!("-- @block {}", id);
                     }
-                    if let Some(pool) = &pool {
-                        if !dry_run {
-                            run_raw(pool, config, &sql).await?;
-                        }
-                    }
+
+                    run_raw(&pool, config, &sql).await?;
                     
                     // Remove from graph
                     dep_graph.remove(&id);
@@ -301,8 +329,9 @@ mod tests {
             },
         ];
 
-        let config = Config::default();
-        let result = execute_blocks(&config, &blocks, true).await;
+        let mut config = Config::default();
+        config.dry_run = true;
+        let result = execute_blocks(&config, &blocks).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().starts_with("Cycle detected in block dependencies"));
     }

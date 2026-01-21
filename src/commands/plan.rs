@@ -53,28 +53,9 @@ pub async fn execute(config: &Config, from_version: Option<String>, to_version: 
 
 /// Initialize a database at the given version and dump its schema
 async fn dump_version_schema(config: &Config, version: &str) -> Result<String, Box<dyn std::error::Error>> {
-    // Create a temporary database name
-    let temp_db_name = format!("temp_plan_{}", version);
-
-    // Clone config and set temp db name
-    let mut temp_config = config.clone();
-    temp_config.database.name = temp_db_name.clone();
-
-    // Use the init command logic to initialize the temp database
-    crate::commands::init::execute(&temp_config, Some(version.to_string())).await?;
-
-    // Dump the schema
-    let pool = db::get_db_pool(&temp_config).await?;
-    let dump_sql = sqlx::query_scalar::<_, String>(
-        "SELECT string_agg(pg_get_functiondef(oid), '; ') FROM pg_proc WHERE proname = 'pg_get_functiondef'"
-    )
-    .fetch_optional(&pool)
-    .await?
-    .unwrap_or_default();
-
     // TODO: Implement proper schema dump
     // For now, return a placeholder
-    Ok(format!("-- Schema dump for version {}\n{}", version, dump_sql))
+    Ok(format!("-- Schema dump for version {}\n-- Placeholder", version))
 }
 
 /// Generate diff between two schema dumps
