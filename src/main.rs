@@ -17,7 +17,12 @@ enum Commands {
     /// Initialize the database
     Init { version: Option<String> },
     /// Create a migration plan
-    Plan { version: Option<String> },
+    Plan {
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        to: Option<String>
+    },
     /// Manage migrations (use --plan or --apply)
     Migration { 
         #[arg(long)]
@@ -53,9 +58,8 @@ fn main() {
             Commands::Init { version } => {
                 commands::init::execute(&config, version).await
             }
-        Commands::Plan { version } => {
-            println!("TODO: plan {:?}", version.unwrap_or_else(|| "next".to_string()));
-            Ok(())
+        Commands::Plan { from, to } => {
+            commands::plan::execute(&config, from, to).await
         }
         Commands::Migration { plan, apply, version } => {
             if plan {
