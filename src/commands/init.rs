@@ -103,7 +103,10 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
     }
 
     // Set the database version in the meta table
-    crate::commands::apply::set_current_version(&db::get_db_pool(config).await?, config, &version).await?;
+    let pool = db::get_db_pool(config).await?;
+    let sql = db::inject_variables(r#"INSERT INTO {{ref.meta}} ("key", "value") VALUES ('db_version', $1)"#, config);
+    let sql_with_value = sql.replace("$1", &format!("'{}'", version));
+    db::run_raw(&pool, config, &sql_with_value).await?;
 
     if config.log_sql {
         debug!("------------------");

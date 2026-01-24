@@ -26,29 +26,6 @@ pub async fn get_current_version(pool: &DbPool, config: &Config) -> Result<Optio
     }
 }
 
-/// Update the database version in the meta table
-pub async fn set_current_version(pool: &DbPool, config: &Config, version: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if config.dry_run {
-        return Ok(());
-    }
-
-    match pool {
-        DbPool::Postgres(p) => {
-            let sql = &db::inject_variables(r#"INSERT INTO {{ref.meta}} ("key", "value") VALUES ('db_version', $1)"#, config);
-            tracing::debug!(target: "sql", "{};", sql);
-
-            sqlx::query(
-                &db::inject_variables(sql, config)
-            )
-                .bind(version)
-                .execute(p)
-                .await?;
-            Ok(())
-        }
-        DbPool::DryRun => Ok(()),
-    }
-}
-
 /// Find migration files needed to reach target version using BFS to find shortest path
 fn find_migrations_to_target(sql_base: &str, current_version: Option<String>, target_version: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let versions = fs::list_versions(sql_base)?;
@@ -75,14 +52,25 @@ fn find_migrations_to_target(sql_base: &str, current_version: Option<String>, ta
 
     // Build a graph of available migrations
     let mut migration_graph: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut migration_files: std::collections::HashMap<(String, String), String> = std::collections::HashMap::new();
     
+    // Initialize all versions in the graph
     for version in &numeric_versions {
-        let version_dir = Path::new(sql_base).join(version);
+        migration_graph.entry(version.clone()).or_insert_with(Vec::new);
+    }
+    migration_graph.entry("next".to_string()).or_insert_with(Vec::new);
+    
+    // For each target version (both numeric and "next"), find migration files
+    // Structure: sql/<target>/<source>.sql means migration from source to target
+    let mut target_versions: Vec<&str> = numeric_versions.iter().map(|v| v.as_str()).collect();
+    target_versions.push("next");
+    
+    for target_version in target_versions {
+        let version_dir = Path::new(sql_base).join(target_version);
         if !version_dir.exists() {
             continue;
         }
         
-        let mut edges = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&version_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -90,37 +78,24 @@ fn find_migrations_to_target(sql_base: &str, current_version: Option<String>, ta
                     if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                         if file_name.ends_with(".sql") && file_name.len() > 4 {
                             let base_name = &file_name[..file_name.len() - 4];
-                            if base_name.chars().all(|c| c.is_ascii_digit()) {
-                                edges.push(base_name.to_string());
+                            if base_name == "next" || base_name.chars().all(|c| c.is_ascii_digit()) {
+                                // sql/<target>/<source>.sql means: source -> target
+                                // So add target to source's neighbors
+                                let edges = migration_graph.entry(base_name.to_string()).or_insert_with(Vec::new);
+                                if !edges.contains(&target_version.to_string()) {
+                                    edges.push(target_version.to_string());
+                                }
+                                // Store the migration file path for this edge
+                                migration_files.insert(
+                                    (base_name.to_string(), target_version.to_string()),
+                                    format!("{}/{}.sql", target_version, base_name)
+                                );
                             }
                         }
                     }
                 }
             }
         }
-        migration_graph.insert(version.clone(), edges);
-    }
-
-    // Check for "next" folder which might have migration files to numeric versions
-    let next_dir = Path::new(sql_base).join("next");
-    if next_dir.exists() {
-        let mut next_migrations = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(&next_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                        if file_name.ends_with(".sql") && file_name.len() > 4 {
-                            let base_name = &file_name[..file_name.len() - 4];
-                            if base_name.chars().all(|c| c.is_ascii_digit()) {
-                                next_migrations.push(base_name.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        migration_graph.insert("next".to_string(), next_migrations);
     }
 
     // BFS to find shortest path
@@ -152,7 +127,9 @@ fn find_migrations_to_target(sql_base: &str, current_version: Option<String>, ta
     let mut current = actual_target.clone();
     
     while let Some(prev) = parent_map.get(&current) {
-        migrations.push(format!("{}/{}.sql", prev, current));
+        if let Some(file_path) = migration_files.get(&(prev.clone(), current.clone())) {
+            migrations.push(file_path.clone());
+        }
         current = prev.clone();
     }
     migrations.reverse();
@@ -206,11 +183,26 @@ pub async fn execute(config: &Config, target_version: Option<String>) -> Result<
         }
 
         let migration_sql = std::fs::read_to_string(&full_path)?;
-        db::run_raw(&pool, config, &migration_sql).await?;
-
-        // Extract target version from migration file path (last part before .sql)
-        if let Some(target_v) = migration_file.split('/').last().and_then(|f| f.strip_suffix(".sql")) {
-            set_current_version(&pool, config, target_v).await?;
+        
+        // Extract target version from migration file path (folder name is the target)
+        // Structure: sql/<target>/<source>.sql means migration from source to target
+        let target_version = migration_file.split('/').next();
+        
+        // Wrap migration and version update in a transaction
+        let transactional_sql = if let Some(target_v) = target_version {
+            format!(
+                "BEGIN;\n{}\nINSERT INTO {{{{ref.meta}}}} (\"key\", \"value\") VALUES ('db_version', '{}') ON CONFLICT (\"key\") DO UPDATE SET \"value\" = '{}';\nCOMMIT;",
+                migration_sql,
+                target_v,
+                target_v
+            )
+        } else {
+            format!("BEGIN;\n{}\nCOMMIT;", migration_sql)
+        };
+        
+        db::run_raw(&pool, config, &transactional_sql).await?;
+        
+        if let Some(target_v) = target_version {
             info!("Updated version to '{}'", target_v);
         }
     }
