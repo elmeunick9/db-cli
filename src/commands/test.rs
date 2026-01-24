@@ -146,7 +146,7 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
     
     // Read and store test file content for later reference
     let mut test_file_contents: HashMap<String, Vec<String>> = HashMap::new();
-    for test_file in &test_files {
+    for (test_file, _) in &test_files {
         if let Ok(content) = std::fs::read_to_string(&test_file) {
             let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
             test_file_contents.insert(test_file.clone(), lines);
@@ -158,14 +158,14 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
     let mut passed_count = 0;
     let mut failed_count = 0;
 
-    for test_file in test_files {
+    for (test_file, schema) in test_files {
         // Extract test name from filename (e.g., "comment_vote.test.sql" -> "comment_vote_test")
         if let Some(file_stem) = Path::new(&test_file).file_stem() {
             if let Some(name_without_test) = file_stem.to_string_lossy().strip_suffix(".test") {
                 let test_function_name = format!("{}_test", name_without_test);
 
                 // Run the test function
-                match run_test_function(&pool,  &test_function_name, "public").await {
+                match run_test_function(&pool,  &test_function_name, &schema).await {
                     Ok(output) => {
                         if output.is_empty() || output.trim() == "OK" {
                             passed_count += 1;

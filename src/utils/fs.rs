@@ -191,7 +191,8 @@ fn generate_diff(path_a: &Path, path_b: &Path, old: &str, new: &str) -> String {
 }
 
 /// Find all test files (*.test.sql) in a version directory
-pub fn find_test_files(sql_base: &str, version: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+/// Returns a Vec of (filepath, schema) tuples
+pub fn find_test_files(sql_base: &str, version: &str) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
     let base = Path::new(sql_base).join(version);
     let mut test_files = vec![];
     
@@ -207,7 +208,14 @@ pub fn find_test_files(sql_base: &str, version: &str) -> Result<Vec<String>, Box
         if path.is_file() {
             if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
                 if file_name.ends_with(".test.sql") {
-                    test_files.push(path.to_string_lossy().to_string());
+                    // Extract schema from the first-level subdirectory under version
+                    if let Some(schema) = path.strip_prefix(&base)
+                        .ok()
+                        .and_then(|p| p.components().next())
+                        .and_then(|c| c.as_os_str().to_str())
+                    {
+                        test_files.push((path.to_string_lossy().to_string(), schema.to_string()));
+                    }
                 }
             }
         }
