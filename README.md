@@ -75,21 +75,38 @@ CREATE TABLE "example2" (
 ## Migration
 
 ```
-db plan [version]
-db migration --plan [version]
+db plan [--from='latest'] [--to='next']
+db migration --plan [--from='latest'] [--to='next']
 ```
 
-Creates a migration plan (`<version>.sql`) for the DB from the current version to the specified version. As with init, by default that is "next" for development mode and "latest" for production.
+> [!IMPORTANT]
+> AI mode must be enabled and configured for this feature to work.
+
+> [!IMPORTANT]
+> This feature is disabled in production.
+
+Creates a migration plan (`<version>.sql`) for the DB from the current version to the specified version.
 
 If the specified version precedes the current one, a backwards migration plan will be created.
 
-It uses a configured LLM to do this (based on the two version diffs).
+> [!WARNING]  
+> Please do review and test the created migration plan before creating a release.
 
 ```
 db migration --apply [version]
 ```
 
 Applies all the migration plans needed to move from the current version to the version specified. Finds the shortest path.
+
+> [!IMPORTANT]
+> To track the current version a `"public"."meta"` table (configurable) must exist satisfying or extending the following definition:
+> ```
+> CREATE TABLE "{{REF_META_TABLE}}" (
+>   "key"   varchar(80) NOT NULL,
+>   "value" text        ,
+>   PRIMARY KEY ("key")
+> );
+> ``` 
 
 ## Version management
 
