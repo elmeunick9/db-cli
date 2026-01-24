@@ -80,7 +80,7 @@ db migration --plan [--from='latest'] [--to='next']
 ```
 
 > [!IMPORTANT]
-> AI mode must be enabled and configured for this feature to work.
+> AI mode must be enabled and configured for this feature to work. Otherwise migration plans must be created manually.
 
 > [!IMPORTANT]
 > This feature is disabled in production.

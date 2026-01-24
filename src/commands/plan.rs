@@ -54,8 +54,15 @@ pub async fn execute(config: &Config, from_version: Option<String>, to_version: 
     // Use LLM to create migration plan
     let migration_sql = generate_migration_plan(config, &diff, &from_version, &to_version).await?;
 
+    // Determine if this is a backwards migration
+    let is_backwards = from_version > to_version;
+
     // Write migration plan to file
-    let migration_file = format!("{}/{}.sql", to_dir.to_string_lossy(), from_version);
+    let migration_file = if is_backwards {
+        format!("{}/{}.sql", from_dir.to_string_lossy(), to_version)
+    } else {
+        format!("{}/{}.sql", to_dir.to_string_lossy(), from_version)
+    };
     std::fs::write(&migration_file, &migration_sql)?;
     info!("Migration plan written to: {}", migration_file);
 

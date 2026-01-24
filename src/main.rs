@@ -29,11 +29,15 @@ enum Commands {
         to: Option<String>
     },
     /// Manage migrations (use --plan or --apply)
-    Migration { 
+    Migration {
         #[arg(long)]
         plan: bool,
         #[arg(long)]
         apply: bool,
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        to: Option<String>,
         version: Option<String>,
     },
     /// Run tests in the database
@@ -71,13 +75,13 @@ fn main() {
         Commands::Plan { from, to } => {
             commands::plan::execute(&config, from, to).await
         }
-        Commands::Migration { plan, apply, version } => {
+        Commands::Migration { plan, apply, from, to , version } => {
             if plan {
-                println!("TODO: migration --plan {:?}", version.unwrap_or_else(|| "next".to_string()));
+                commands::plan::execute(&config, from, to).await?;
             } else if apply {
                 println!("TODO: migration --apply {:?}", version.unwrap_or_else(|| "next".to_string()));
             } else {
-                println!("TODO: migration {:?}", version.unwrap_or_else(|| "next".to_string()));
+                tracing::info!("Please specify either --plan or --apply.");
             }
             Ok(())
         }
