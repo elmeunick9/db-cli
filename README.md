@@ -106,9 +106,6 @@ Applies all the migration plans needed to move from the current version to the v
 > );
 > ``` 
 
-> [!IMPORTANT]
-> Migration to "next" is disabled in production, please create a release first.
-
 ## Version management
 
 Every version available lives in your `sql_base` directory as a subfolder, e.g. `/sql/20260101/`. We use the YYYYMMDD format to automatically assign version numbers. Additionally the version *next* contains the files for the next planned release, that is, it's a development only version. The alias *latest* can be used in commands and points to the latest released (numeric) version.

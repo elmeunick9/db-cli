@@ -147,7 +147,13 @@ pub async fn execute(config: &Config, target_version: Option<String>) -> Result<
         return Err("Cannot migrate to 'next' in production mode. Please create a release first.".into());
     }
 
-    let target = target_version.unwrap_or_else(|| "next".to_string());
+    let target = target_version.unwrap_or_else(|| {
+        if config.is_dev() {
+            "next".to_string()
+        } else {
+            "latest".to_string()
+        }
+    });
     
     let mut config_no_dry: Config = config.clone();
     config_no_dry.dry_run = false;
