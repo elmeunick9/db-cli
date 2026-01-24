@@ -85,9 +85,7 @@ db migration --plan [--from='latest'] [--to='next']
 > [!IMPORTANT]
 > This feature is disabled in production.
 
-Creates a migration plan (`<version>.sql`) for the DB from the current version to the specified version.
-
-If the specified version precedes the current one, a backwards migration plan will be created.
+Creates a migration plan (`<version>.sql`) for the DB from the specified versions. If the `to` version precedes the `from` version, a backwards migration plan will be created.
 
 > [!WARNING]  
 > Please do review and test the created migration plan before creating a release.
@@ -100,13 +98,16 @@ Applies all the migration plans needed to move from the current version to the v
 
 > [!IMPORTANT]
 > To track the current version a `"public"."meta"` table (configurable) must exist satisfying or extending the following definition:
-> ```
+> ```SQL
 > CREATE TABLE "{{REF_META_TABLE}}" (
 >   "key"   varchar(80) NOT NULL,
 >   "value" text        ,
 >   PRIMARY KEY ("key")
 > );
 > ``` 
+
+> [!IMPORTANT]
+> Migration to "next" is disabled in production, please create a release first.
 
 ## Version management
 
