@@ -30,22 +30,46 @@ pub fn inject_variables(sql: &str, config: &Config) -> String {
     let mut result = sql.to_string();
     
     // Inject database configuration variables using dot notation
+    // Support both {{database.X}} and {{db.X}} as aliases
     result = result
         .replace("{{database.sa.user}}", &config.database.sa.user)
+        .replace("{{db.sa.user}}", &config.database.sa.user)
         .replace("{{database.sa.password}}", &config.database.sa.password)
+        .replace("{{db.sa.password}}", &config.database.sa.password)
         .replace("{{database.api.user}}", &config.database.api.user)
+        .replace("{{db.api.user}}", &config.database.api.user)
         .replace("{{database.api.password}}", &config.database.api.password)
+        .replace("{{db.api.password}}", &config.database.api.password)
         .replace("{{database.host}}", &config.database.host)
+        .replace("{{db.host}}", &config.database.host)
         .replace("{{database.port}}", &config.database.port.to_string())
+        .replace("{{db.port}}", &config.database.port.to_string())
         .replace("{{database.name}}", &config.database.name)
-        .replace("{{database.ssl}}", if config.database.ssl { "true" } else { "false" });
+        .replace("{{db.name}}", &config.database.name)
+        .replace("{{database.ssl}}", if config.database.ssl { "true" } else { "false" })
+        .replace("{{db.ssl}}", if config.database.ssl { "true" } else { "false" });
     
     // Inject references using dot notation
+    // Support both {{references.<name>}} and {{ref.<name>}} as aliases
     for (key, _) in &config.references {
-        let placeholder = format!("{{{{references.{}}}}}", key);
+        let placeholder_long = format!("{{{{references.{}}}}}", key);
+        let placeholder_short = format!("{{{{ref.{}}}}}", key);
         if let Ok(reference) = get_reference(config, key) {
-            result = result.replace(&placeholder, &reference);
+            result = result.replace(&placeholder_long, &reference);
+            result = result.replace(&placeholder_short, &reference);
         }
+    }
+    
+    result
+}
+
+pub fn inject_secrets(sql: &str, config: &Config) -> String {
+    let mut result = sql.to_string();
+    
+    // Inject secrets - always plain strings with no transformation
+    for (key, value) in &config.secrets {
+        let placeholder = format!("{{{{secrets.{}}}}}", key);
+        result = result.replace(&placeholder, value);
     }
     
     result
@@ -53,14 +77,27 @@ pub fn inject_variables(sql: &str, config: &Config) -> String {
 
 /// Execute a prepared SQL statement
 pub async fn run(pool: &DbPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
+    let sql_with_vars = inject_variables(sql, config);
+    let sql_final = inject_secrets(&sql_with_vars, config);
+    
+    // Log SQL, redacting secrets if log_secrets is false
     if config.log_sql {
-        tracing::debug!(target: "sql", "{};", sql);
+        let sql_to_log = if config.log_secrets {
+            sql_final.clone()
+        } else {
+            let mut redacted = sql_final.clone();
+            for (key, _) in &config.secrets {
+                let placeholder = format!("{{{{secrets.{}}}}}", key);
+                redacted = redacted.replace(&placeholder, "REDACTED");
+            }
+            redacted
+        };
+        tracing::debug!(target: "sql", "{};", sql_to_log);
     }
 
-    let sql = inject_variables(sql, config);
     match pool {
         DbPool::Postgres(p) => {
-            sqlx::query(&sql).execute(p).await?;
+            sqlx::query(&sql_final).execute(p).await?;
         }
         DbPool::DryRun => {}
     }
@@ -69,15 +106,28 @@ pub async fn run(pool: &DbPool, config: &Config, sql: &str) -> Result<(), sqlx::
 
 /// Execute a raw SQL statement
 pub async fn run_raw(pool: &DbPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
+    let sql_with_vars = inject_variables(sql, config);
+    let sql_final = inject_secrets(&sql_with_vars, config);
+    
+    // Log SQL, redacting secrets if log_secrets is false
     if config.log_sql {
-        tracing::debug!(target: "sql", "{}", sql);
+        let sql_to_log = if config.log_secrets {
+            sql_final.clone()
+        } else {
+            let mut redacted = sql_final.clone();
+            for (key, _) in &config.secrets {
+                let placeholder = format!("{{{{secrets.{}}}}}", key);
+                redacted = redacted.replace(&placeholder, "REDACTED");
+            }
+            redacted
+        };
+        tracing::debug!(target: "sql", "{}", sql_to_log);
         tracing::debug!(target: "sql", "");
     }
 
-    let sql = inject_variables(sql, config);
     match pool {
         DbPool::Postgres(p) => {
-            sqlx::raw_sql(&sql).execute(p).await?;
+            sqlx::raw_sql(&sql_final).execute(p).await?;
         }
         DbPool::DryRun => {}
     }
@@ -346,6 +396,18 @@ mod tests {
     }
 
     #[test]
+    fn test_inject_variables_with_database_alias() {
+        let mut config = Config::default();
+        config.database.sa.user = "sa_user".to_string();
+        config.database.host = "localhost".to_string();
+        config.database.port = 5432;
+
+        let sql = "CONNECT {{db.host}}:{{db.port}} AS {{db.sa.user}}";
+        let result = inject_variables(sql, &config);
+        assert_eq!(result, "CONNECT localhost:5432 AS sa_user");
+    }
+
+    #[test]
     fn test_inject_variables_with_references_new_format() {
         let mut config = Config::default();
         config.sql_dialect = "postgres".to_string();
@@ -357,6 +419,31 @@ mod tests {
         let sql = "SELECT * FROM {{references.meta_key}}";
         let result = inject_variables(sql, &config);
         assert_eq!(result, "SELECT * FROM \"public\".\"meta\"");
+    }
+
+    #[test]
+    fn test_inject_variables_with_references_short_alias() {
+        let mut config = Config::default();
+        config.sql_dialect = "postgres".to_string();
+        config.references.insert("meta_key".to_string(), crate::config::ReferenceValue::StringArray(vec![
+            "public".to_string(),
+            "meta".to_string(),
+        ]));
+
+        let sql = "SELECT * FROM {{ref.meta_key}}";
+        let result = inject_variables(sql, &config);
+        assert_eq!(result, "SELECT * FROM \"public\".\"meta\"");
+    }
+
+    #[test]
+    fn test_inject_secrets() {
+        let mut config = Config::default();
+        config.secrets.insert("api_key".to_string(), "secret123".to_string());
+        config.secrets.insert("password".to_string(), "pass456".to_string());
+
+        let sql = "CONNECT WITH {{secrets.api_key}} AND {{secrets.password}}";
+        let result = inject_secrets(sql, &config);
+        assert_eq!(result, "CONNECT WITH secret123 AND pass456");
     }
 
     #[tokio::test]

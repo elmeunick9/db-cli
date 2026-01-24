@@ -21,6 +21,7 @@ fn default_ai_provider() -> String { "OpenRouter".to_string() }
 fn default_ai_model() -> String { "arcee-ai/trinity-mini:free".to_string() }
 fn default_ai_api_key() -> String { "".to_string() }
 fn default_sql_dialect() -> String { "postgres".to_string() }
+fn default_log_secrets() -> bool { false }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -93,11 +94,15 @@ pub struct Config {
     pub keep_max_releases: usize,
     #[serde(default = "default_log_sql")]
     pub log_sql: bool,
+    #[serde(default = "default_log_secrets")]
+    pub log_secrets: bool,
     pub database: DatabaseConfig,
     #[serde(default)]
     pub ai: AiConfig,
     #[serde(default)]
     pub references: HashMap<String, ReferenceValue>,
+    #[serde(default)]
+    pub secrets: HashMap<String, String>,
 }
 
 impl Default for Config {
@@ -110,6 +115,7 @@ impl Default for Config {
             dry_run: default_dry_run(),
             keep_max_releases: default_keep_max_releases(),
             log_sql: default_log_sql(),
+            log_secrets: default_log_secrets(),
             database: DatabaseConfig {
                 host: default_host(),
                 port: default_port(),
@@ -121,6 +127,7 @@ impl Default for Config {
             },
             ai: AiConfig::default(),
             references: HashMap::new(),
+            secrets: HashMap::new(),
         }
     }
 }
@@ -170,6 +177,11 @@ impl Config {
             
             // Validate reference keys
             for key in file_config.references.keys() {
+                Self::validate_key_format(key)?;
+            }
+
+            // Validate secret keys
+            for key in file_config.secrets.keys() {
                 Self::validate_key_format(key)?;
             }
             

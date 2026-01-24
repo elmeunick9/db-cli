@@ -88,7 +88,7 @@ db migration --plan [--from='latest'] [--to='next']
 Creates a migration plan (`<version>.sql`) for the DB from the specified versions. If the `to` version precedes the `from` version, a backwards migration plan will be created.
 
 > [!WARNING]  
-> Please do review and test the created migration plan before creating a release.
+> Please do review and test the created migration plan before creating a release, AI may make mistakes!
 
 ```
 db migration --apply [version]
@@ -145,7 +145,7 @@ db code-generate [version]
 
 Runs a configured command that will perform code generation for your project, e.g. `sqlx prepare`.
 
-## Setting up your DB
+# Setting up your DB
 
 db-cli doesn't create or manage your DB server, instead it expects access to an existing instance. For development it's recommended to setup an instance using Docker (or podman). E.g:
 
@@ -153,3 +153,46 @@ db-cli doesn't create or manage your DB server, instead it expects access to an 
 docker pull postgres:18
 docker run --name your-db-name -p 5432:5432 -e POSTGRES_PASSWORD=postgres -d postgres:18
 ```
+
+# Configuration
+
+Configuration is managed through a `db.toml` file in your project root. This section documents advanced configuration features.
+
+## References
+
+References allow you to configure database object identifiers (tables, views, functions, etc.) that may be required by third party tools or libraries.
+
+Reference format:
+```toml
+[references]
+meta = ["public", "meta"]
+users_id = ["public", "users", ["id"]]
+```
+
+In SQL files, use references via:
+- `{{references.<name>}}` - Full format
+- `{{ref.<name>}}` - Short format (alias)
+
+The references will be automatically formatted according to your `sql_dialect` setting.
+
+## Secrets
+
+Secrets are sensitive values (API keys, passwords, tokens, etc.) that should not be stored in version control. Unlike references, secrets are always injected as plain strings without any SQL dialect transformation.
+
+In SQL files, use secrets via:
+- `{{secrets.<name>}}`
+
+> [!NOTE]  
+> By default, secrets are NOT logged to protect sensitive data. To enable secret logging (for debugging), set `log_secrets = true` in your `db.toml`. When disabled, logged SQL will show `REDACTED` in place of secret values.
+
+## Database Configuration Aliases
+
+For convenience, database configuration can be referenced using both full and short format:
+- `{{database.host}}` / `{{db.host}}`
+- `{{database.port}}` / `{{db.port}}`
+- `{{database.name}}` / `{{db.name}}`
+- `{{database.sa.user}}` / `{{db.sa.user}}`
+- `{{database.sa.password}}` / `{{db.sa.password}}`
+- `{{database.api.user}}` / `{{db.api.user}}`
+- `{{database.api.password}}` / `{{db.api.password}}`
+- `{{database.ssl}}` / `{{db.ssl}}`

@@ -48,8 +48,10 @@ pub fn get_reference(config: &Config, key: &str) -> Result<String, String> {
 }
 
 /// Parse a ReferenceValue into (schema, object, optional_columns)
-/// Expects format: ["schema", "object"] or ["schema", "object", ["col1", "col2", ...]]
-/// Schema and object are required.
+/// Supports two formats:
+/// 1. Simple array: ["schema", "object"] 
+/// 2. Nested array: ["schema", "object", ["col1", "col2", ...]]
+/// Schema and object are always required. Columns are optional.
 pub fn parse_reference_value(ref_value: &ReferenceValue) -> Result<(String, String, Option<Vec<String>>), String> {
     match ref_value {
         ReferenceValue::StringArray(arr) => {

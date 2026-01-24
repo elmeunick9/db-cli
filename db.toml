@@ -1,7 +1,6 @@
 # DB-CLI Configuration
 mode = "dev"
 base = "sql"
-sql_dialect = "postgres"
 
 [references]
 meta = ["public", "meta"]

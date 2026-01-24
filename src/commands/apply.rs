@@ -5,17 +5,16 @@ use tracing::{info, debug};
 use crate::config::Config;
 use crate::utils::fs;
 use crate::utils::db::{self, DbPool};
-use crate::utils::references::get_reference;
 
 /// Get the current database version from the meta table
-async fn get_current_version(pool: &DbPool, config: &Config) -> Result<Option<String>, Box<dyn std::error::Error>> {
+pub async fn get_current_version(pool: &DbPool, config: &Config) -> Result<Option<String>, Box<dyn std::error::Error>> {
     if config.dry_run {
         return Ok(None);
     }
 
     match pool {
         DbPool::Postgres(p) => {
-            let sql = "SELECT \"value\" FROM {{meta_key}} WHERE \"key\" = 'db_version'";
+            let sql = "SELECT \"value\" FROM {{ref.meta}} WHERE \"key\" = 'db_version'";
             let result: Option<String> = sqlx::query_scalar(
                 &db::inject_variables(sql, config)
             )
@@ -28,19 +27,18 @@ async fn get_current_version(pool: &DbPool, config: &Config) -> Result<Option<St
 }
 
 /// Update the database version in the meta table
-async fn set_current_version(pool: &DbPool, config: &Config, version: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn set_current_version(pool: &DbPool, config: &Config, version: &str) -> Result<(), Box<dyn std::error::Error>> {
     if config.dry_run {
         return Ok(());
     }
 
     match pool {
         DbPool::Postgres(p) => {
-            // Get the meta_key reference and strip the columns part to get just the table reference
-            let meta_table_ref = get_reference(config, "meta_key")?;
-            let meta_table = meta_table_ref.split(" (").next().unwrap_or(&meta_table_ref);
-            
+            let sql = &db::inject_variables(r#"INSERT INTO {{ref.meta}} ("key", "value") VALUES ('db_version', $1)"#, config);
+            tracing::debug!(target: "sql", "{};", sql);
+
             sqlx::query(
-                &format!(r#"INSERT INTO {} ("key", "value") VALUES ('version', $1) ON CONFLICT ("key") DO UPDATE SET "value" = $1"#, meta_table)
+                &db::inject_variables(sql, config)
             )
                 .bind(version)
                 .execute(p)
@@ -182,7 +180,7 @@ pub async fn execute(config: &Config, target_version: Option<String>) -> Result<
 
     // Get current version
     let current_version = get_current_version(&pool, &config_no_dry).await?;
-    info!("Current database version: {:?}", current_version);
+    info!("Current database version: {:?}", current_version.as_deref().unwrap_or("none"));
 
     // Find migration files needed
     let migrations = find_migrations_to_target(&sql_base, current_version.clone(), &target)?;

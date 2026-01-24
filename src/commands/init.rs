@@ -102,6 +102,9 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
         db::execute_blocks(config, layer).await?;
     }
 
+    // Set the database version in the meta table
+    crate::commands::apply::set_current_version(&db::get_db_pool(config).await?, config, &version).await?;
+
     if config.log_sql {
         debug!("------------------");
     }

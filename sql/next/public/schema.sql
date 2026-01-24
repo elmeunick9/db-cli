@@ -110,3 +110,10 @@ CREATE TABLE "invitation" (
     FOREIGN KEY ("story") REFERENCES "story" ("id") ON DELETE CASCADE,
     FOREIGN KEY ("user") REFERENCES "auth"."user" ("id") ON DELETE CASCADE
 );
+
+CREATE TABLE "meta" (
+    "key"               varchar(100)        NOT NULL,
+    "updated_at"        timestamp           NOT NULL DEFAULT now(),
+    "value"             text                NOT NULL,
+    PRIMARY KEY ("key")
+);
