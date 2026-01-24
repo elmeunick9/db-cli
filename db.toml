@@ -1,23 +1,27 @@
 # DB-CLI Configuration
 mode = "dev"
 base = "sql"
+sql_dialect = "postgres"
+
+[references]
+meta = ["public", "meta"]
 
 [database]
-    name = "storymoar"
-    host = "localhost"
-    port = 5432
-    ssl=false
-    
-    [[sa]]
-        user = "postgres"
-        password = "postgres"
+name = "storymoar"
+host = "localhost"
+port = 5432
+ssl=false
 
-    [[api]]
-        user = "api"
-        password = "0000"
+[[sa]]
+    user = "postgres"
+    password = "postgres"
+
+[[api]]
+    user = "api"
+    password = "0000"
 
 [ai]
-    enabled = true
-    provider = "OpenRouter"
-    model = "minimax/minimax-m2.1"
-    api_key = "free:v1-f7fdccfba536719bce3c7016&e35e130f72c65a723f2a1ad52bd8faa9a71a0&3"
+enabled = true
+provider = "OpenRouter"
+model = "minimax/minimax-m2.1"
+api_key = "free:v1-f7fdccfba536719bce3c7016&e35e130f72c65a723f2a1ad52bd8faa9a71a0&3"

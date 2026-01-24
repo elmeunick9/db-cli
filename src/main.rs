@@ -79,7 +79,7 @@ fn main() {
             if plan {
                 commands::plan::execute(&config, from, to).await?;
             } else if apply {
-                println!("TODO: migration --apply {:?}", version.unwrap_or_else(|| "next".to_string()));
+                commands::apply::execute(&config, version).await?;
             } else {
                 tracing::info!("Please specify either --plan or --apply.");
             }

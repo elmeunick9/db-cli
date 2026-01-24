@@ -2,6 +2,7 @@ use tracing::{info, warn, debug};
 
 use crate::config::Config;
 use crate::utils::blocks::Block;
+use crate::utils::references::get_reference;
 
 #[derive(Clone)]
 pub enum DbPool {
@@ -25,12 +26,29 @@ pub async fn get_db_pool(config: &Config) -> Result<DbPool, sqlx::Error> {
     Ok(DbPool::Postgres(pool))
 }
 
-fn inject_variables(sql: &str, config: &Config) -> String {
-    sql
-        .replace("{{DB_SA_USER}}", &config.database.sa.user)
-        .replace("{{DB_SA_PASSWORD}}", &config.database.sa.password)
-        .replace("{{DB_API_USER}}", &config.database.api.user)
-        .replace("{{DB_API_PASSWORD}}", &config.database.api.password)
+pub fn inject_variables(sql: &str, config: &Config) -> String {
+    let mut result = sql.to_string();
+    
+    // Inject database configuration variables using dot notation
+    result = result
+        .replace("{{database.sa.user}}", &config.database.sa.user)
+        .replace("{{database.sa.password}}", &config.database.sa.password)
+        .replace("{{database.api.user}}", &config.database.api.user)
+        .replace("{{database.api.password}}", &config.database.api.password)
+        .replace("{{database.host}}", &config.database.host)
+        .replace("{{database.port}}", &config.database.port.to_string())
+        .replace("{{database.name}}", &config.database.name)
+        .replace("{{database.ssl}}", if config.database.ssl { "true" } else { "false" });
+    
+    // Inject references using dot notation
+    for (key, _) in &config.references {
+        let placeholder = format!("{{{{references.{}}}}}", key);
+        if let Ok(reference) = get_reference(config, key) {
+            result = result.replace(&placeholder, &reference);
+        }
+    }
+    
+    result
 }
 
 /// Execute a prepared SQL statement
@@ -309,6 +327,37 @@ pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>) -> Result<(), 
 mod tests {
     use super::*;
     use crate::utils::blocks::Block;
+
+    #[test]
+    fn test_inject_variables_with_new_format() {
+        let mut config = Config::default();
+        config.sql_dialect = "postgres".to_string();
+        config.database.sa.user = "sa_user".to_string();
+        config.database.sa.password = "sa_pass".to_string();
+        config.database.api.user = "api_user".to_string();
+        config.database.api.password = "api_pass".to_string();
+        config.database.host = "localhost".to_string();
+        config.database.port = 5432;
+        config.database.name = "mydb".to_string();
+
+        let sql = "CONNECT {{database.host}}:{{database.port}}/{{database.name}} AS {{database.sa.user}}:{{database.sa.password}}";
+        let result = inject_variables(sql, &config);
+        assert_eq!(result, "CONNECT localhost:5432/mydb AS sa_user:sa_pass");
+    }
+
+    #[test]
+    fn test_inject_variables_with_references_new_format() {
+        let mut config = Config::default();
+        config.sql_dialect = "postgres".to_string();
+        config.references.insert("meta_key".to_string(), crate::config::ReferenceValue::StringArray(vec![
+            "public".to_string(),
+            "meta".to_string(),
+        ]));
+
+        let sql = "SELECT * FROM {{references.meta_key}}";
+        let result = inject_variables(sql, &config);
+        assert_eq!(result, "SELECT * FROM \"public\".\"meta\"");
+    }
 
     #[tokio::test]
     async fn test_cycle_detection_dry_run() {

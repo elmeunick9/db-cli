@@ -99,7 +99,7 @@ Applies all the migration plans needed to move from the current version to the v
 > [!IMPORTANT]
 > To track the current version a `"public"."meta"` table (configurable) must exist satisfying or extending the following definition:
 > ```SQL
-> CREATE TABLE "{{REF_META_TABLE}}" (
+> CREATE TABLE {{references.meta}} (
 >   "key"   varchar(80) NOT NULL,
 >   "value" text        ,
 >   PRIMARY KEY ("key")

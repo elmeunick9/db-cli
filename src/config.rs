@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::collections::HashMap;
 
 fn default_host() -> String { "localhost".to_string() }
 fn default_port() -> u16 { 5432 }
@@ -19,6 +20,7 @@ fn default_ai_enabled() -> bool { true }
 fn default_ai_provider() -> String { "OpenRouter".to_string() }
 fn default_ai_model() -> String { "arcee-ai/trinity-mini:free".to_string() }
 fn default_ai_api_key() -> String { "".to_string() }
+fn default_sql_dialect() -> String { "postgres".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -50,6 +52,14 @@ impl Default for AiConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ReferenceValue {
+    String(String),
+    StringArray(Vec<String>),
+    NestedArray(Vec<ReferenceValue>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
     #[serde(default = "default_host")]
     pub host: String,
@@ -73,6 +83,8 @@ pub struct Config {
     pub mode: String,
     #[serde(default = "default_base")]
     pub base: String,
+    #[serde(default = "default_sql_dialect")]
+    pub sql_dialect: String,
     #[serde(default = "default_auto_set_search_path")]
     pub auto_set_search_path: bool,
     #[serde(default = "default_dry_run")]
@@ -84,6 +96,8 @@ pub struct Config {
     pub database: DatabaseConfig,
     #[serde(default)]
     pub ai: AiConfig,
+    #[serde(default)]
+    pub references: HashMap<String, ReferenceValue>,
 }
 
 impl Default for Config {
@@ -91,6 +105,7 @@ impl Default for Config {
         Config {
             mode: default_mode(),
             base: default_base(),
+            sql_dialect: default_sql_dialect(),
             auto_set_search_path: default_auto_set_search_path(),
             dry_run: default_dry_run(),
             keep_max_releases: default_keep_max_releases(),
@@ -105,11 +120,44 @@ impl Default for Config {
                 api: default_api(),
             },
             ai: AiConfig::default(),
+            references: HashMap::new(),
         }
     }
 }
 
 impl Config {
+    /// Validate that a key is in proper snake_case format (lowercase, alphanumeric, underscores only)
+    fn validate_key_format(key: &str) -> Result<(), String> {
+        if key.is_empty() {
+            return Err("Key cannot be empty".to_string());
+        }
+        
+        // Check if it matches snake_case pattern: lowercase, digits, underscores
+        // Must start with lowercase letter, can contain underscores and digits
+        if !key.chars().next().unwrap().is_lowercase() {
+            return Err(format!("Key '{}' must start with a lowercase letter", key));
+        }
+        
+        for c in key.chars() {
+            if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_' {
+                return Err(format!(
+                    "Key '{}' contains invalid character '{}'. Keys must be in snake_case: lowercase letters, digits, and underscores only",
+                    key, c
+                ));
+            }
+        }
+        
+        if key.ends_with('_') || key.starts_with('_') {
+            return Err(format!("Key '{}' cannot start or end with underscore", key));
+        }
+        
+        if key.contains("__") {
+            return Err(format!("Key '{}' cannot contain consecutive underscores", key));
+        }
+        
+        Ok(())
+    }
+
     /// Load configuration from TOML file and override with environment variables
     pub fn load(config_path: Option<&str>) -> Result<Self, Box<dyn std::error::Error>> {
         let mut config = Self::default();
@@ -119,6 +167,12 @@ impl Config {
         if Path::new(config_file).exists() {
             let content = fs::read_to_string(config_file)?;
             let file_config: Config = toml::from_str(&content)?;
+            
+            // Validate reference keys
+            for key in file_config.references.keys() {
+                Self::validate_key_format(key)?;
+            }
+            
             config = file_config;
         }
 
@@ -239,5 +293,55 @@ mod tests {
         assert_eq!(config.host, "localhost");
         assert_eq!(config.port, 5432);
         assert_eq!(config.name, "mydb");
+    }
+
+    #[test]
+    fn test_validate_key_format_valid() {
+        assert!(Config::validate_key_format("meta_key").is_ok());
+        assert!(Config::validate_key_format("my_table_ref").is_ok());
+        assert!(Config::validate_key_format("ref123").is_ok());
+        assert!(Config::validate_key_format("a").is_ok());
+    }
+
+    #[test]
+    fn test_validate_key_format_uppercase() {
+        let result = Config::validate_key_format("MetaKey");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("lowercase letter"));
+    }
+
+    #[test]
+    fn test_validate_key_format_special_chars() {
+        let result = Config::validate_key_format("meta-key");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid character"));
+    }
+
+    #[test]
+    fn test_validate_key_format_leading_underscore() {
+        let result = Config::validate_key_format("_meta_key");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("start or end with underscore"));
+    }
+
+    #[test]
+    fn test_validate_key_format_trailing_underscore() {
+        let result = Config::validate_key_format("meta_key_");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("start or end with underscore"));
+    }
+
+    #[test]
+    fn test_validate_key_format_consecutive_underscores() {
+        let result = Config::validate_key_format("meta__key");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("consecutive underscores"));
+    }
+
+    #[test]
+    fn test_validate_key_format_empty() {
+        let result = Config::validate_key_format("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
     }
 }
