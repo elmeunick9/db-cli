@@ -189,3 +189,29 @@ fn generate_diff(path_a: &Path, path_b: &Path, old: &str, new: &str) -> String {
         status, path_b.display(), diff
     )
 }
+
+/// Find all test files (*.test.sql) in a version directory
+pub fn find_test_files(sql_base: &str, version: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let base = Path::new(sql_base).join(version);
+    let mut test_files = vec![];
+    
+    if !base.exists() {
+        return Ok(test_files);
+    }
+    
+    for entry in WalkDir::new(&base)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                if file_name.ends_with(".test.sql") {
+                    test_files.push(path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    
+    Ok(test_files)
+}

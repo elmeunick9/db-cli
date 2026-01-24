@@ -104,9 +104,26 @@ pub async fn run(pool: &DbPool, config: &Config, sql: &str) -> Result<(), sqlx::
     Ok(())
 }
 
-/// Execute a raw SQL statement
+/// Execute a raw SQL statement with optional schema context
 pub async fn run_raw(pool: &DbPool, config: &Config, sql: &str) -> Result<(), sqlx::Error> {
-    let sql_with_vars = inject_variables(sql, config);
+    run_raw_with_schema(pool, config, sql, None).await
+}
+
+/// Execute a raw SQL statement with optional schema context
+pub async fn run_raw_with_schema(pool: &DbPool, config: &Config, sql: &str, schema: Option<&str>) -> Result<(), sqlx::Error> {
+    // Optionally prepend SET search_path if schema is provided and auto_set_search_path is enabled
+    let sql = if let Some(s) = schema {
+        if config.auto_set_search_path {
+            let set_search_path_sql = format!("SET search_path TO {};", s);
+            format!("{}\n{}", set_search_path_sql, sql)
+        } else {
+            sql.to_string()
+        }
+    } else {
+        sql.to_string()
+    };
+
+    let sql_with_vars = inject_variables(&sql, config);
     let sql_final = inject_secrets(&sql_with_vars, config);
     
     // Log SQL, redacting secrets if log_secrets is false
@@ -226,7 +243,16 @@ pub async fn create_db(
     if config.is_dev() {
         // In dev mode, drop and recreate if exists
         if exists {
-            let drop_sql = format!("DROP DATABASE \"{}\"", db_name);
+            // Terminate all connections to the database before dropping
+            let terminate_sql = format!(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{}' AND pid <> pg_backend_pid()",
+                db_name
+            );
+            if let DbPool::Postgres(p) = &pool {
+                let _ = sqlx::query(&terminate_sql).execute(p).await;
+            }
+            
+            let drop_sql = format!("DROP DATABASE IF EXISTS \"{}\"", db_name);
             run(&pool, &maintenance, &drop_sql).await?;
         }
         let sql = format!("CREATE DATABASE \"{}\"", db_name);
@@ -335,20 +361,12 @@ pub async fn execute_blocks(config: &Config, blocks: &Vec<Block>) -> Result<(), 
         for id in keys {
             if let Some(deps) = dep_graph.get(&id) {
                 if deps.is_empty() {
-                    // Execute block
-                    // Set search path to the correct schema
-                    let set_search_path_sql = format!("SET search_path TO {};", block_map[&id].schema);
-                    let sql = if config.auto_set_search_path {
-                        format!("{}\n{}", set_search_path_sql, block_map[&id].sql)
-                    } else {
-                        format!("{}", block_map[&id].sql)
-                    };
-
+                    // Execute block with its schema context
                     if config.log_sql && !config.dry_run {
                         debug!("-- @block {}", id);
                     }
 
-                    run_raw(&pool, config, &sql).await?;
+                    run_raw_with_schema(&pool, config, &block_map[&id].sql, Some(&block_map[&id].schema)).await?;
                     
                     // Remove from graph
                     dep_graph.remove(&id);

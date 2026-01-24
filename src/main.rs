@@ -89,8 +89,7 @@ fn main() {
             commands::release::execute(&config).await
         }
         Commands::Test { version } => {
-            println!("TODO: check {:?}", version.unwrap_or_else(|| "next".to_string()));
-            Ok(())
+            commands::test::execute(&config, version).await
         }
         Commands::Generate { version } => {
             println!("TODO: generate {:?}", version.unwrap_or_else(|| "next".to_string()));
