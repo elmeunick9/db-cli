@@ -124,15 +124,16 @@ If the config `releases.keep_max` is used and the new release would exceed that 
 db test [version]
 ```
 
-This command is used to run SQL tests in the DB. This is specially useful for making unit tests of functions (stored procedures).
+This command is used to run SQL tests in the DB. This is specially useful for making unit tests of functions and stored procedures.
 
 Initializes a new testing database `testdb_<your_db_name>` at the provided version (next by default), executes all ``**.*.test.sql` files and runs the tests.
 
-These files must define a function that takes no parameters and returns a string in the format `[<shortid>] actual=<value> expected<value>`. 
+These files must define a function that takes no parameters and returns a string in the format `[<shortid>] actual=<value> expected=<value>`. 
 
-> The _shortid_ is used as anchor and therefore it must be a hardcoded/static and unique string. We recommend creating a custom command in your IDE.
+> [!NOTE]
+> The _shortid_ is used as anchor and therefore it must be a hardcoded unique string. We recommend creating a custom command in your IDE.
 
-Once all tests are loaded, the test runner will run them like normal stored procedures and return an error if the returned string is not empty.
+Once all tests are loaded, the test runner will run them like normal functions and return an error if the returned string is not empty or `'OK'`.
 
 ## Code generation
 
