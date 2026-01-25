@@ -77,6 +77,18 @@ async fn run_test_function(
                 .await?;
             Ok(result)
         }
+        DbPool::MySql(p) => {
+            let result: String = sqlx::query_scalar(&sql)
+                .fetch_one(p)
+                .await?;
+            Ok(result)
+        }
+        DbPool::Mssql(p) => {
+            let result: String = sqlx::query_scalar(&sql)
+                .fetch_one(p)
+                .await?;
+            Ok(result)
+        }
         DbPool::DryRun => Ok("".to_string()),
     }
 }
@@ -105,7 +117,7 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
 
     // Resolve version aliases like "latest" to a concrete version folder
     if version == "latest" {
-        match fs::get_latest_version(sql_base) {
+        match fs::get_latest_version(&sql_base) {
             Ok(v) => {
                 version = v;
             }
@@ -117,13 +129,13 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
 
     info!("Running tests for version: {}", version);
 
-    let version_dir = Path::new(sql_base).join(&version);
+    let version_dir = Path::new(&sql_base).join(&version);
     if !version_dir.exists() {
         return Err(format!("Version directory not found: {}", version_dir.display()).into());
     }
 
     // Find all test files
-    let test_files = fs::find_test_files(sql_base, &version)?;
+    let test_files = fs::find_test_files(&sql_base, &version)?;
     if test_files.is_empty() {
         info!("No test files found for version {}", version);
         return Ok(());

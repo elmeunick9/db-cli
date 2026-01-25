@@ -11,11 +11,11 @@ host = "localhost"
 port = 5432
 ssl=false
 
-[[sa]]
+    [[sa]]
     user = "postgres"
     password = "postgres"
 
-[[api]]
+    [[api]]
     user = "api"
     password = "0000"
 

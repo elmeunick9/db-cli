@@ -12,7 +12,7 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
 
     // Resolve version aliases like "latest" to a concrete version folder
     if version == "latest" {
-        match fs::get_latest_version(sql_base) {
+        match fs::get_latest_version(&sql_base) {
             Ok(v) => {
                 version = v;
             }
@@ -28,13 +28,13 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
         info!("Dry run mode enabled.");
     }
     
-    let version_dir = Path::new(sql_base).join(&version);
+    let version_dir = Path::new(&sql_base).join(&version);
     if !version_dir.exists() {
         return Err(format!("Version directory not found: {}", version_dir.display()).into());
     }
     
     // 1) List schemas
-    let schemas = fs::list_schemas(sql_base, &version)?;
+    let schemas = fs::list_schemas(&sql_base, &version)?;
     info!("Found schemas: {:?}", schemas);
     
     // 2) Create DB
@@ -60,7 +60,7 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
     let mut blocks: Vec<blocks::Block> = vec![];
     let mut files_count = 0;
     for schema in &schemas {
-        let files = fs::read_schema_files(sql_base, &version, schema)?;
+        let files = fs::read_schema_files(&sql_base, &version, schema)?;
         files_count += files.len();
         for file in files {
             let bks = blocks::parse_blocks(schema, &file)?;

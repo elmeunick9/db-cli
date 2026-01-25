@@ -22,6 +22,24 @@ pub async fn get_current_version(pool: &DbPool, config: &Config) -> Result<Optio
                 .await?;
             Ok(result)
         }
+        DbPool::MySql(p) => {
+            let sql = "SELECT `value` FROM {{ref.meta}} WHERE `key` = 'db_version'";
+            let result: Option<String> = sqlx::query_scalar(
+                &db::inject_variables(sql, config)
+            )
+                .fetch_optional(p)
+                .await?;
+            Ok(result)
+        }
+        DbPool::Mssql(p) => {
+            let sql = "SELECT [value] FROM {{ref.meta}} WHERE [key] = 'db_version'";
+            let result: Option<String> = sqlx::query_scalar(
+                &db::inject_variables(sql, config)
+            )
+                .fetch_optional(p)
+                .await?;
+            Ok(result)
+        }
         DbPool::DryRun => Ok(None),
     }
 }
@@ -66,7 +84,7 @@ fn find_migrations_to_target(sql_base: &str, current_version: Option<String>, ta
     target_versions.push("next");
     
     for target_version in target_versions {
-        let version_dir = Path::new(sql_base).join(target_version);
+        let version_dir = Path::new(&sql_base).join(target_version);
         if !version_dir.exists() {
             continue;
         }

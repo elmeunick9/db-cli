@@ -11,7 +11,7 @@ pub async fn execute(config: &Config) -> Result<(), Box<dyn std::error::Error>> 
     let sql_base = config.sql_base();
 
     // Check if "next" directory exists
-    let next_dir = Path::new(sql_base).join("next");
+    let next_dir = Path::new(&sql_base).join("next");
     if !next_dir.exists() {
         return Err("next directory does not exist".into());
     }
@@ -21,7 +21,7 @@ pub async fn execute(config: &Config) -> Result<(), Box<dyn std::error::Error>> 
     let new_version = format!("{:04}{:02}{:02}", now.year(), now.month(), now.day());
 
     // Check if version already exists
-    let new_version_dir = Path::new(sql_base).join(&new_version);
+    let new_version_dir = Path::new(&sql_base).join(&new_version);
     if new_version_dir.exists() {
         return Err(format!("version {} already exists", new_version).into());
     }
@@ -39,7 +39,7 @@ pub async fn execute(config: &Config) -> Result<(), Box<dyn std::error::Error>> 
 
     // Handle keep_max if set
     let keep_max = config.keep_max_releases;
-    let versions = fs_utils::list_versions(sql_base)?;
+    let versions = fs_utils::list_versions(&sql_base)?;
     let mut numeric_versions: Vec<String> = versions
         .into_iter()
         .filter(|v| v != "next" && v.chars().all(|c| c.is_ascii_digit()))
@@ -48,7 +48,7 @@ pub async fn execute(config: &Config) -> Result<(), Box<dyn std::error::Error>> 
 
     if numeric_versions.len() > keep_max && keep_max > 0 {
         for old_version in numeric_versions.iter().skip(keep_max) {
-            let old_dir = Path::new(sql_base).join(old_version);
+            let old_dir = Path::new(&sql_base).join(old_version);
             if old_dir.exists() {
                 info!("Removing old version: {}", old_version);
                 fs::remove_dir_all(&old_dir)?;

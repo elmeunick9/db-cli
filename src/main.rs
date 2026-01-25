@@ -44,62 +44,152 @@ enum Commands {
     Test { version: Option<String> },
     /// Create a new release
     Release { },
-    /// Run code generation
-    Generate { version: Option<String> },
 }
 
 fn main() {
     let cli = Cli::parse();
 
-    // Load configuration before running any commands
-    let config = match config::Config::load(None) {
+    let root_config_path = find_root_config_path();
+
+    // Load root configuration (from repo root, if found)
+    let root_config = match config::Config::load(root_config_path.as_deref()) {
         Ok(cfg) => cfg,
         Err(e) => {
-            eprintln!("Failed to load configuration: {}", e);
+            eprintln!("Failed to load root configuration: {}", e);
             std::process::exit(1);
         }
     };
 
-    log::init_logging(&config);
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-    
-    let result = rt.block_on(async {
-        match cli.command {
-            Commands::Init { version, dry_run } => {
-                let config = config::Config {
-                    dry_run: config.dry_run || dry_run,
-                    ..config.clone()
-                };
-                commands::init::execute(&config, version).await
+    // Load configuration from current working directory if it has a db.toml
+    let cwd_config = if std::path::Path::new("db.toml").exists() {
+        match config::Config::load(Some("db.toml")) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                eprintln!("Failed to load configuration: {}", e);
+                std::process::exit(1);
             }
-        Commands::Plan { from, to } => {
-            commands::plan::execute(&config, from, to).await
         }
-        Commands::Migration { plan, apply, from, to , version } => {
-            if plan {
-                commands::plan::execute(&config, from, to).await?;
-            } else if apply {
-                commands::apply::execute(&config, version).await?;
-            } else {
-                tracing::info!("Please specify either --plan or --apply.");
-            }
-            Ok(())
-        }
-        Commands::Release {} => {
-            commands::release::execute(&config).await
-        }
-        Commands::Test { version } => {
-            commands::test::execute(&config, version).await
-        }
-        Commands::Generate { version } => {
-            println!("TODO: generate {:?}", version.unwrap_or_else(|| "next".to_string()));
-            Ok(())
-        }
-        }
-    });
+    } else {
+        root_config.clone()
+    };
+
+    // Determine which databases to work with
+    let working_dbs = determine_working_dbs(&cwd_config);
     
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
+    if working_dbs.is_empty() {
+        eprintln!("No databases configured. Set working_db in db.toml or use WORKING_DB environment variable.");
         std::process::exit(1);
     }
+
+    let db_count = working_dbs.len();
+    log::init_logging(&cwd_config);
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+    
+    let mut any_failed = false;
+    for db_path in working_dbs {
+        // Load config for this specific database (with hierarchical overrides)
+        let config = match config::Config::load_for_path(&db_path, root_config_path.as_deref()) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                eprintln!("Failed to load configuration for '{}': {}", db_path, e);
+                any_failed = true;
+                continue;
+            }
+        };
+
+        if db_count > 1 {
+            tracing::info!("Processing database: {}", db_path);
+        }
+
+        let result = rt.block_on(async {
+            match cli.command {
+                Commands::Init { ref version, dry_run } => {
+                    let config = config::Config {
+                        dry_run: config.dry_run || dry_run,
+                        ..config.clone()
+                    };
+                    commands::init::execute(&config, version.clone()).await
+                }
+                Commands::Plan { ref from, ref to } => {
+                    commands::plan::execute(&config, from.clone(), to.clone()).await
+                }
+                Commands::Migration { plan, apply, ref from, ref to , ref version } => {
+                    if plan {
+                        commands::plan::execute(&config, from.clone(), to.clone()).await?;
+                    } else if apply {
+                        commands::apply::execute(&config, version.clone()).await?;
+                    } else {
+                        tracing::info!("Please specify either --plan or --apply.");
+                    }
+                    Ok(())
+                }
+                Commands::Release {} => {
+                    commands::release::execute(&config).await
+                }
+                Commands::Test { ref version } => {
+                    commands::test::execute(&config, version.clone()).await
+                }
+            }
+        });
+        
+        if let Err(e) = result {
+            eprintln!("Error processing '{}': {}", db_path, e);
+            any_failed = true;
+        }
+    }
+
+    if any_failed {
+        std::process::exit(1);
+    }
+}
+
+fn find_root_config_path() -> Option<String> {
+    let mut dir = std::env::current_dir().ok()?;
+    let mut last_found: Option<String> = None;
+
+    loop {
+        let candidate = dir.join("db.toml");
+        if candidate.exists() {
+            last_found = Some(candidate.to_string_lossy().to_string());
+        }
+
+        if !dir.pop() {
+            break;
+        }
+    }
+
+    last_found
+}
+
+/// Determine which databases to work with based on env var and config semantics
+fn determine_working_dbs(cwd_config: &config::Config) -> Vec<String> {
+    // Check environment variable first
+    if let Ok(env_dbs) = std::env::var("WORKING_DB") {
+        return env_dbs.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+
+    let sql_base_list = cwd_config.sql_base_list();
+    if sql_base_list.is_empty() {
+        return vec![];
+    }
+
+    let is_local = sql_base_list.len() == 1 && {
+        let base = sql_base_list[0].trim();
+        base.is_empty() || base == "." || base == "./"
+    };
+
+    if is_local {
+        let base = sql_base_list[0].trim();
+        return vec![if base.is_empty() { ".".to_string() } else { base.to_string() }];
+    }
+
+    // Root config: working_db is a subset of sql_base
+    if cwd_config.working_db.is_empty() {
+        return sql_base_list;
+    }
+
+    cwd_config.working_db.clone()
 }

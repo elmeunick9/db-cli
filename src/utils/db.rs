@@ -7,7 +7,8 @@ use crate::utils::references::get_reference;
 #[derive(Clone)]
 pub enum DbPool {
     Postgres(sqlx::PgPool),
-    // MySql(sqlx::MySqlPool),
+    MySql(sqlx::MySqlPool),
+    Mssql(sqlx::MssqlPool),
     DryRun,
 }
 
@@ -18,12 +19,33 @@ pub async fn get_db_pool(config: &Config) -> Result<DbPool, sqlx::Error> {
     }
 
     let database_url = config.database_url();
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await?;
-        
-    Ok(DbPool::Postgres(pool))
+    
+    match config.sql_dialect.as_str() {
+        "postgres" | "postgresql" => {
+            let pool = sqlx::postgres::PgPoolOptions::new()
+                .max_connections(5)
+                .connect(&database_url)
+                .await?;
+            Ok(DbPool::Postgres(pool))
+        }
+        "mysql" => {
+            let pool = sqlx::mysql::MySqlPoolOptions::new()
+                .max_connections(5)
+                .connect(&database_url)
+                .await?;
+            Ok(DbPool::MySql(pool))
+        }
+        "mssql" => {
+            let pool = sqlx::mssql::MssqlPoolOptions::new()
+                .max_connections(5)
+                .connect(&database_url)
+                .await?;
+            Ok(DbPool::Mssql(pool))
+        }
+        dialect => {
+            Err(sqlx::Error::Configuration(format!("Unsupported SQL dialect: {}", dialect).into()))
+        }
+    }
 }
 
 pub fn inject_variables(sql: &str, config: &Config) -> String {
@@ -99,6 +121,12 @@ pub async fn run(pool: &DbPool, config: &Config, sql: &str) -> Result<(), sqlx::
         DbPool::Postgres(p) => {
             sqlx::query(&sql_final).execute(p).await?;
         }
+        DbPool::MySql(p) => {
+            sqlx::query(&sql_final).execute(p).await?;
+        }
+        DbPool::Mssql(p) => {
+            sqlx::query(&sql_final).execute(p).await?;
+        }
         DbPool::DryRun => {}
     }
     Ok(())
@@ -146,6 +174,12 @@ pub async fn run_raw_with_schema(pool: &DbPool, config: &Config, sql: &str, sche
         DbPool::Postgres(p) => {
             sqlx::raw_sql(&sql_final).execute(p).await?;
         }
+        DbPool::MySql(p) => {
+            sqlx::raw_sql(&sql_final).execute(p).await?;
+        }
+        DbPool::Mssql(p) => {
+            sqlx::raw_sql(&sql_final).execute(p).await?;
+        }
         DbPool::DryRun => {}
     }
     Ok(())
@@ -159,6 +193,26 @@ async fn db_exists(pool: &DbPool, config: &Config) -> Result<bool, Box<dyn std::
         DbPool::Postgres(p) => {
             let db_name = &config.database.name;
             let exists = sqlx::query("SELECT 1 FROM pg_database WHERE datname = $1")
+                .bind(db_name)
+                .fetch_optional(p)
+                .await?
+                .is_some();
+
+            Ok(exists)
+        },
+        DbPool::MySql(p) => {
+            let db_name = &config.database.name;
+            let exists = sqlx::query("SELECT 1 FROM information_schema.schemata WHERE schema_name = ?")
+                .bind(db_name)
+                .fetch_optional(p)
+                .await?
+                .is_some();
+
+            Ok(exists)
+        },
+        DbPool::Mssql(p) => {
+            let db_name = &config.database.name;
+            let exists = sqlx::query("SELECT 1 FROM sys.databases WHERE name = ?")
                 .bind(db_name)
                 .fetch_optional(p)
                 .await?
@@ -183,6 +237,14 @@ async fn role_exists(pool: &DbPool, config: &Config, role_name: &str) -> Result<
                 .is_some();
 
             Ok(exists)
+        },
+        DbPool::MySql(_p) => {
+            // MySQL: roles/users are simplified, not implemented for this check
+            Ok(false)
+        },
+        DbPool::Mssql(_p) => {
+            // MSSQL: principals/logins handling is different, not implemented for this check
+            Ok(false)
         },
         DbPool::DryRun => return Ok(false),
     }
@@ -223,6 +285,14 @@ async fn is_database_empty(pool: &DbPool, config: &Config) -> Result<bool, Box<d
             .await?;
 
             Ok(schema_count == 0 && table_count == 0 && view_count == 0 && function_count == 0)
+        },
+        DbPool::MySql(_p) => {
+            // MySQL: Check if database is empty - simplified check
+            Ok(false)  // TODO: implement proper check
+        },
+        DbPool::Mssql(_p) => {
+            // MSSQL: Check if database is empty - simplified check
+            Ok(false)  // TODO: implement proper check
         },
         DbPool::DryRun => return Ok(true)
     }

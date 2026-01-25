@@ -17,18 +17,18 @@ pub async fn execute(config: &Config, from_version: Option<String>, to_version: 
 
     // Resolve version aliases
     if from_version == "latest" {
-        from_version = fs::get_latest_version(sql_base)?;
+        from_version = fs::get_latest_version(&sql_base)?;
     }
 
     if to_version == "latest" {
-        to_version = fs::get_latest_version(sql_base)?;
+        to_version = fs::get_latest_version(&sql_base)?;
     }
 
     info!("Creating migration plan from version '{}' to '{}'", from_version, to_version);
 
     // Check if versions exist
-    let from_dir = Path::new(sql_base).join(&from_version);
-    let to_dir = Path::new(sql_base).join(&to_version);
+    let from_dir = Path::new(&sql_base).join(&from_version);
+    let to_dir = Path::new(&sql_base).join(&to_version);
     if !from_dir.exists() {
         return Err(format!("From version directory not found: {}", from_dir.display()).into());
     }

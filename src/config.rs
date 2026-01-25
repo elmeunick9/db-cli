@@ -22,6 +22,8 @@ fn default_ai_model() -> String { "arcee-ai/trinity-mini:free".to_string() }
 fn default_ai_api_key() -> String { "".to_string() }
 fn default_sql_dialect() -> String { "postgres".to_string() }
 fn default_log_secrets() -> bool { false }
+fn default_sql_base() -> SqlBase { SqlBase::Single("sql".to_string()) }
+fn default_working_db() -> Vec<String> { vec![] }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -61,6 +63,22 @@ pub enum ReferenceValue {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SqlBase {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl SqlBase {
+    pub fn to_vec(&self) -> Vec<String> {
+        match self {
+            SqlBase::Single(s) => vec![s.clone()],
+            SqlBase::Multiple(v) => v.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
     #[serde(default = "default_host")]
     pub host: String,
@@ -82,10 +100,12 @@ pub struct DatabaseConfig {
 pub struct Config {
     #[serde(default = "default_mode")]
     pub mode: String,
-    #[serde(default = "default_base")]
-    pub base: String,
+    #[serde(default = "default_sql_base")]
+    pub base: SqlBase,
     #[serde(default = "default_sql_dialect")]
     pub sql_dialect: String,
+    #[serde(default = "default_working_db")]
+    pub working_db: Vec<String>,
     #[serde(default = "default_auto_set_search_path")]
     pub auto_set_search_path: bool,
     #[serde(default = "default_dry_run")]
@@ -109,8 +129,9 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             mode: default_mode(),
-            base: default_base(),
+            base: default_sql_base(),
             sql_dialect: default_sql_dialect(),
+            working_db: default_working_db(),
             auto_set_search_path: default_auto_set_search_path(),
             dry_run: default_dry_run(),
             keep_max_releases: default_keep_max_releases(),
@@ -165,6 +186,17 @@ impl Config {
         Ok(())
     }
 
+    /// Validate that a SQL dialect is supported
+    fn validate_dialect(dialect: &str) -> Result<(), String> {
+        match dialect {
+            "postgres" | "postgresql" | "mysql" | "mssql" | "sqlite" => Ok(()),
+            _ => Err(format!(
+                "Unsupported SQL dialect '{}'. Supported dialects: postgres, postgresql, mysql, mssql, sqlite",
+                dialect
+            )),
+        }
+    }
+
     /// Load configuration from TOML file and override with environment variables
     pub fn load(config_path: Option<&str>) -> Result<Self, Box<dyn std::error::Error>> {
         let mut config = Self::default();
@@ -185,6 +217,9 @@ impl Config {
                 Self::validate_key_format(key)?;
             }
             
+            // Validate SQL dialect early
+            Self::validate_dialect(&file_config.sql_dialect)?;
+            
             config = file_config;
         }
 
@@ -195,6 +230,50 @@ impl Config {
         config.apply_env_overrides();
 
         Ok(config)
+    }
+
+    /// Load and merge configuration from a specific path, with hierarchical overrides
+    /// Returns config with single sql_base entry from that directory
+    pub fn load_for_path(
+        base_path: &str,
+        root_config_path: Option<&str>
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        // Load root config first
+        let mut merged = Self::load(root_config_path)?;
+
+        // Look for db.toml in the base_path directory
+        let local_config_path = Path::new(base_path).join("db.toml");
+        if local_config_path.exists() {
+            let content = fs::read_to_string(&local_config_path)?;
+            
+            // Parse as table to check which keys are present
+            let table: toml::Table = toml::from_str(&content)?;
+            
+            // Parse as config to get the values
+            let local_config: Config = toml::from_str(&content)?;
+            
+            // Validate SQL dialect
+            Self::validate_dialect(&local_config.sql_dialect)?;
+            
+            // Only override fields that exist in the local config
+            if table.contains_key("mode") { merged.mode = local_config.mode; }
+            if table.contains_key("base") { merged.base = local_config.base; }
+            if table.contains_key("sql_dialect") { merged.sql_dialect = local_config.sql_dialect; }
+            if table.contains_key("working_db") { merged.working_db = local_config.working_db; }
+            if table.contains_key("auto_set_search_path") { merged.auto_set_search_path = local_config.auto_set_search_path; }
+            if table.contains_key("dry_run") { merged.dry_run = local_config.dry_run; }
+            if table.contains_key("keep_max_releases") { merged.keep_max_releases = local_config.keep_max_releases; }
+            if table.contains_key("log_sql") { merged.log_sql = local_config.log_sql; }
+            if table.contains_key("log_secrets") { merged.log_secrets = local_config.log_secrets; }
+            if table.contains_key("database") { merged.database = local_config.database; }
+            if table.contains_key("ai") { merged.ai = local_config.ai; }
+            if table.contains_key("references") { merged.references = local_config.references; }
+            if table.contains_key("secrets") { merged.secrets = local_config.secrets; }
+        }
+
+        // Ensure sql_base is a single string for this path
+        merged.base = SqlBase::Single(base_path.to_string());
+        Ok(merged)
     }
 
     /// Override configuration values with environment variables
@@ -231,7 +310,7 @@ impl Config {
             self.mode = value;
         }
         if let Ok(value) = std::env::var("DB_BASE") {
-            self.base = value;
+            self.base = SqlBase::Single(value);
         }
         if let Ok(value) = std::env::var("DB_LOG_SQL") {
             if let Ok(log_sql) = value.parse() {
@@ -270,10 +349,18 @@ impl Config {
         })
     }
 
-    /// Get the database connection string
+    /// Get the database connection string based on configured dialect
     pub fn database_url(&self) -> String {
+        let scheme = match self.sql_dialect.as_str() {
+            "postgres" | "postgresql" => "postgres",
+            "mysql" => "mysql",
+            "mssql" => "mssql",
+            _ => "postgres",
+        };
+        
         format!(
-            "postgres://{}:{}@{}:{}/{}",
+            "{}://{}:{}@{}:{}/{}",
+            scheme,
             self.database.sa.user,
             self.database.sa.password,
             self.database.host,
@@ -282,8 +369,15 @@ impl Config {
         )
     }
 
-    pub fn sql_base(&self) -> &str {
-        &self.base
+    pub fn sql_base(&self) -> String {
+        match &self.base {
+            SqlBase::Single(s) => s.clone(),
+            SqlBase::Multiple(v) => v.get(0).cloned().unwrap_or_else(|| "sql".to_string()),
+        }
+    }
+
+    pub fn sql_base_list(&self) -> Vec<String> {
+        self.base.to_vec()
     }
 
     /// Check if in development mode
