@@ -83,12 +83,12 @@ async fn run_test_function(
                 .await?;
             Ok(result)
         }
-        DbPool::Mssql(p) => {
-            let result: String = sqlx::query_scalar(&sql)
-                .fetch_one(p)
-                .await?;
-            Ok(result)
-        }
+        // DbPool::Mssql(p) => {
+        //     let result: String = sqlx::query_scalar(&sql)
+        //         .fetch_one(p)
+        //         .await?;
+        //     Ok(result)
+        // }
         DbPool::DryRun => Ok("".to_string()),
     }
 }

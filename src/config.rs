@@ -11,7 +11,6 @@ fn default_sa() -> User { User { user: "postgres".to_string(), password: "postgr
 fn default_api() -> User { User { user: "api".to_string(), password: "0000".to_string() } }
 fn default_maintenance_db_name() -> String { "postgres".to_string() }
 fn default_mode() -> String { "dev".to_string() }
-fn default_base() -> String { "sql".to_string() }
 fn default_auto_set_search_path() -> bool { true }
 fn default_dry_run() -> bool { false }
 fn default_log_sql() -> bool { true }
@@ -24,6 +23,49 @@ fn default_sql_dialect() -> String { "postgres".to_string() }
 fn default_log_secrets() -> bool { false }
 fn default_sql_base() -> SqlBase { SqlBase::Single("sql".to_string()) }
 fn default_working_db() -> Vec<String> { vec![] }
+
+/// Validate that a key is in proper snake_case format (lowercase, alphanumeric, underscores only)
+fn validate_key_format(key: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("Key cannot be empty".to_string());
+    }
+
+    // Check if it matches snake_case pattern: lowercase, digits, underscores
+    // Must start with lowercase letter, can contain underscores and digits
+    if !key.chars().next().unwrap().is_lowercase() {
+        return Err(format!("Key '{}' must start with a lowercase letter", key));
+    }
+
+    for c in key.chars() {
+        if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_' {
+            return Err(format!(
+                "Key '{}' contains invalid character '{}'. Keys must be in snake_case: lowercase letters, digits, and underscores only",
+                key, c
+            ));
+        }
+    }
+
+    if key.ends_with('_') || key.starts_with('_') {
+        return Err(format!("Key '{}' cannot start or end with underscore", key));
+    }
+
+    if key.contains("__") {
+        return Err(format!("Key '{}' cannot contain consecutive underscores", key));
+    }
+
+    Ok(())
+}
+
+/// Validate that a SQL dialect is supported
+fn validate_dialect(dialect: &str) -> Result<(), String> {
+    match dialect {
+        "postgres" | "postgresql" | "mysql" | "mssql" | "sqlite" => Ok(()),
+        _ => Err(format!(
+            "Unsupported SQL dialect '{}'. Supported dialects: postgres, postgresql, mysql, mssql, sqlite",
+            dialect
+        )),
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -154,74 +196,35 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Validate that a key is in proper snake_case format (lowercase, alphanumeric, underscores only)
-    fn validate_key_format(key: &str) -> Result<(), String> {
-        if key.is_empty() {
-            return Err("Key cannot be empty".to_string());
-        }
-        
-        // Check if it matches snake_case pattern: lowercase, digits, underscores
-        // Must start with lowercase letter, can contain underscores and digits
-        if !key.chars().next().unwrap().is_lowercase() {
-            return Err(format!("Key '{}' must start with a lowercase letter", key));
-        }
-        
-        for c in key.chars() {
-            if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_' {
-                return Err(format!(
-                    "Key '{}' contains invalid character '{}'. Keys must be in snake_case: lowercase letters, digits, and underscores only",
-                    key, c
-                ));
-            }
-        }
-        
-        if key.ends_with('_') || key.starts_with('_') {
-            return Err(format!("Key '{}' cannot start or end with underscore", key));
-        }
-        
-        if key.contains("__") {
-            return Err(format!("Key '{}' cannot contain consecutive underscores", key));
-        }
-        
-        Ok(())
-    }
-
-    /// Validate that a SQL dialect is supported
-    fn validate_dialect(dialect: &str) -> Result<(), String> {
-        match dialect {
-            "postgres" | "postgresql" | "mysql" | "mssql" | "sqlite" => Ok(()),
-            _ => Err(format!(
-                "Unsupported SQL dialect '{}'. Supported dialects: postgres, postgresql, mysql, mssql, sqlite",
-                dialect
-            )),
-        }
-    }
-
     /// Load configuration from TOML file and override with environment variables
-    pub fn load(config_path: Option<&str>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load(path: Option<&str>) -> Result<(Self, toml::Table), Box<dyn std::error::Error>> {
         let mut config = Self::default();
+        let mut table = toml::Table::new();
 
         // Try to load from config file if provided or if db.toml exists
-        let config_file = config_path.unwrap_or("db.toml");
-        if Path::new(config_file).exists() {
-            let content = fs::read_to_string(config_file)?;
-            let file_config: Config = toml::from_str(&content)?;
-            
-            // Validate reference keys
-            for key in file_config.references.keys() {
-                Self::validate_key_format(key)?;
-            }
-
-            // Validate secret keys
-            for key in file_config.secrets.keys() {
-                Self::validate_key_format(key)?;
-            }
-            
-            // Validate SQL dialect early
-            Self::validate_dialect(&file_config.sql_dialect)?;
-            
-            config = file_config;
+        let config_file = path.unwrap_or("db.toml");
+        if !Path::new(config_file).exists() {
+            panic!("Config path does not exist: {}", config_file);
         }
+
+        let content = fs::read_to_string(config_file)?;
+        let file_config: Config = toml::from_str(&content)?;
+        table = toml::from_str(&content)?;
+            
+        // Validate reference keys
+        for key in file_config.references.keys() {
+            validate_key_format(key)?;
+        }
+
+        // Validate secret keys
+        for key in file_config.secrets.keys() {
+            validate_key_format(key)?;
+        }
+        
+        // Validate SQL dialect early
+        validate_dialect(&file_config.sql_dialect)?;
+        
+        config = file_config;
 
         // De-obfuscate public/free ApiKey for OpenRouter (temporal fix)
         config.ai.api_key = config.ai.api_key.replace("free:", "sk-or-").replace("&", "e");
@@ -229,51 +232,69 @@ impl Config {
         // Override with environment variables
         config.apply_env_overrides();
 
-        Ok(config)
+        Ok((config, table))
     }
 
-    /// Load and merge configuration from a specific path, with hierarchical overrides
-    /// Returns config with single sql_base entry from that directory
-    pub fn load_for_path(
-        base_path: &str,
-        root_config_path: Option<&str>
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        // Load root config first
-        let mut merged = Self::load(root_config_path)?;
+    /// Merge the provided config into self using a TOML table to detect which keys are present
+    pub fn merge(mut self, config: Config, table: &toml::Table) -> Self {
+        if table.contains_key("mode") { self.mode = config.mode; }
+        if table.contains_key("base") { self.base = config.base; }
+        if table.contains_key("sql_dialect") { self.sql_dialect = config.sql_dialect; }
+        if table.contains_key("working_db") { self.working_db = config.working_db; }
+        if table.contains_key("auto_set_search_path") { self.auto_set_search_path = config.auto_set_search_path; }
+        if table.contains_key("dry_run") { self.dry_run = config.dry_run; }
+        if table.contains_key("keep_max_releases") { self.keep_max_releases = config.keep_max_releases; }
+        if table.contains_key("log_sql") { self.log_sql = config.log_sql; }
+        if table.contains_key("log_secrets") { self.log_secrets = config.log_secrets; }
 
-        // Look for db.toml in the base_path directory
-        let local_config_path = Path::new(base_path).join("db.toml");
-        if local_config_path.exists() {
-            let content = fs::read_to_string(&local_config_path)?;
-            
-            // Parse as table to check which keys are present
-            let table: toml::Table = toml::from_str(&content)?;
-            
-            // Parse as config to get the values
-            let local_config: Config = toml::from_str(&content)?;
-            
-            // Validate SQL dialect
-            Self::validate_dialect(&local_config.sql_dialect)?;
-            
-            // Only override fields that exist in the local config
-            if table.contains_key("mode") { merged.mode = local_config.mode; }
-            if table.contains_key("base") { merged.base = local_config.base; }
-            if table.contains_key("sql_dialect") { merged.sql_dialect = local_config.sql_dialect; }
-            if table.contains_key("working_db") { merged.working_db = local_config.working_db; }
-            if table.contains_key("auto_set_search_path") { merged.auto_set_search_path = local_config.auto_set_search_path; }
-            if table.contains_key("dry_run") { merged.dry_run = local_config.dry_run; }
-            if table.contains_key("keep_max_releases") { merged.keep_max_releases = local_config.keep_max_releases; }
-            if table.contains_key("log_sql") { merged.log_sql = local_config.log_sql; }
-            if table.contains_key("log_secrets") { merged.log_secrets = local_config.log_secrets; }
-            if table.contains_key("database") { merged.database = local_config.database; }
-            if table.contains_key("ai") { merged.ai = local_config.ai; }
-            if table.contains_key("references") { merged.references = local_config.references; }
-            if table.contains_key("secrets") { merged.secrets = local_config.secrets; }
+        if let Some(db_table) = table.get("database").and_then(|v| v.as_table()) {
+            self.merge_database(config.database, db_table);
         }
 
-        // Ensure sql_base is a single string for this path
-        merged.base = SqlBase::Single(base_path.to_string());
-        Ok(merged)
+        if let Some(ai_table) = table.get("ai").and_then(|v| v.as_table()) {
+            self.merge_ai(config.ai, ai_table);
+        }
+
+        if let Some(ref_table) = table.get("references").and_then(|v| v.as_table()) {
+            for key in ref_table.keys() {
+                if let Some(value) = config.references.get(key) {
+                    self.references.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        if let Some(secret_table) = table.get("secrets").and_then(|v| v.as_table()) {
+            for key in secret_table.keys() {
+                if let Some(value) = config.secrets.get(key) {
+                    self.secrets.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        self
+    }
+
+    /// Merge configuration from a single path into self using deep, key-aware merges
+    pub fn merge_from(mut self, path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let (local_config, table) = Self::load(Some(path))?;
+        Ok(self.merge(local_config, &table))
+    }
+
+    fn merge_database(&mut self, config: DatabaseConfig, table: &toml::Table) {
+        if table.contains_key("host") { self.database.host = config.host; }
+        if table.contains_key("port") { self.database.port = config.port; }
+        if table.contains_key("name") { self.database.name = config.name; }
+        if table.contains_key("ssl") { self.database.ssl = config.ssl; }
+        if table.contains_key("sa") { self.database.sa = config.sa; }
+        if table.contains_key("api") { self.database.api = config.api; }
+        if table.contains_key("maintenance_db_name") { self.database.maintenance_db_name = config.maintenance_db_name; }
+    }
+
+    fn merge_ai(&mut self, config: AiConfig, table: &toml::Table) {
+        if table.contains_key("enabled") { self.ai.enabled = config.enabled; }
+        if table.contains_key("provider") { self.ai.provider = config.provider; }
+        if table.contains_key("model") { self.ai.model = config.model; }
+        if table.contains_key("api_key") { self.ai.api_key = config.api_key; }
     }
 
     /// Override configuration values with environment variables
@@ -403,50 +424,50 @@ mod tests {
 
     #[test]
     fn test_validate_key_format_valid() {
-        assert!(Config::validate_key_format("meta_key").is_ok());
-        assert!(Config::validate_key_format("my_table_ref").is_ok());
-        assert!(Config::validate_key_format("ref123").is_ok());
-        assert!(Config::validate_key_format("a").is_ok());
+        assert!(validate_key_format("meta_key").is_ok());
+        assert!(validate_key_format("my_table_ref").is_ok());
+        assert!(validate_key_format("ref123").is_ok());
+        assert!(validate_key_format("a").is_ok());
     }
 
     #[test]
     fn test_validate_key_format_uppercase() {
-        let result = Config::validate_key_format("MetaKey");
+        let result = validate_key_format("MetaKey");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("lowercase letter"));
     }
 
     #[test]
     fn test_validate_key_format_special_chars() {
-        let result = Config::validate_key_format("meta-key");
+        let result = validate_key_format("meta-key");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid character"));
     }
 
     #[test]
     fn test_validate_key_format_leading_underscore() {
-        let result = Config::validate_key_format("_meta_key");
+        let result = validate_key_format("_meta_key");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("start or end with underscore"));
     }
 
     #[test]
     fn test_validate_key_format_trailing_underscore() {
-        let result = Config::validate_key_format("meta_key_");
+        let result = validate_key_format("meta_key_");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("start or end with underscore"));
     }
 
     #[test]
     fn test_validate_key_format_consecutive_underscores() {
-        let result = Config::validate_key_format("meta__key");
+        let result = validate_key_format("meta__key");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("consecutive underscores"));
     }
 
     #[test]
     fn test_validate_key_format_empty() {
-        let result = Config::validate_key_format("");
+        let result = validate_key_format("");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("empty"));
     }

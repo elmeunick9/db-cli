@@ -53,7 +53,7 @@ fn main() {
 
     // Load root configuration (from repo root, if found)
     let root_config = match config::Config::load(root_config_path.as_deref()) {
-        Ok(cfg) => cfg,
+        Ok((cfg, _)) => cfg,
         Err(e) => {
             eprintln!("Failed to load root configuration: {}", e);
             std::process::exit(1);
@@ -63,7 +63,7 @@ fn main() {
     // Load configuration from current working directory if it has a db.toml
     let cwd_config = if std::path::Path::new("db.toml").exists() {
         match config::Config::load(Some("db.toml")) {
-            Ok(cfg) => cfg,
+            Ok((cfg, _)) => cfg,
             Err(e) => {
                 eprintln!("Failed to load configuration: {}", e);
                 std::process::exit(1);
@@ -88,8 +88,8 @@ fn main() {
     let mut any_failed = false;
     for db_path in working_dbs {
         // Load config for this specific database (with hierarchical overrides)
-        let config = match config::Config::load_for_path(&db_path, root_config_path.as_deref()) {
-            Ok(cfg) => cfg,
+        let config = match root_config.clone().merge_from(&db_path) {
+            Ok(cfg) => config::Config { base: config::SqlBase::Single(db_path.clone()), ..cfg },
             Err(e) => {
                 eprintln!("Failed to load configuration for '{}': {}", db_path, e);
                 any_failed = true;

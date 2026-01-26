@@ -31,15 +31,15 @@ pub async fn get_current_version(pool: &DbPool, config: &Config) -> Result<Optio
                 .await?;
             Ok(result)
         }
-        DbPool::Mssql(p) => {
-            let sql = "SELECT [value] FROM {{ref.meta}} WHERE [key] = 'db_version'";
-            let result: Option<String> = sqlx::query_scalar(
-                &db::inject_variables(sql, config)
-            )
-                .fetch_optional(p)
-                .await?;
-            Ok(result)
-        }
+        // DbPool::Mssql(p) => {
+        //     let sql = "SELECT [value] FROM {{ref.meta}} WHERE [key] = 'db_version'";
+        //     let result: Option<String> = sqlx::query_scalar(
+        //         &db::inject_variables(sql, config)
+        //     )
+        //         .fetch_optional(p)
+        //         .await?;
+        //     Ok(result)
+        // }
         DbPool::DryRun => Ok(None),
     }
 }
