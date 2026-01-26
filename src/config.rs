@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::collections::HashMap;
+use crate::utils::validators::{validate_key_format, validate_dialect};
 
 fn default_host() -> String { "localhost".to_string() }
 fn default_port() -> u16 { 5432 }
@@ -23,49 +24,6 @@ fn default_sql_dialect() -> String { "postgres".to_string() }
 fn default_log_secrets() -> bool { false }
 fn default_sql_base() -> SqlBase { SqlBase::Single("sql".to_string()) }
 fn default_working_db() -> Vec<String> { vec![] }
-
-/// Validate that a key is in proper snake_case format (lowercase, alphanumeric, underscores only)
-fn validate_key_format(key: &str) -> Result<(), String> {
-    if key.is_empty() {
-        return Err("Key cannot be empty".to_string());
-    }
-
-    // Check if it matches snake_case pattern: lowercase, digits, underscores
-    // Must start with lowercase letter, can contain underscores and digits
-    if !key.chars().next().unwrap().is_lowercase() {
-        return Err(format!("Key '{}' must start with a lowercase letter", key));
-    }
-
-    for c in key.chars() {
-        if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '_' {
-            return Err(format!(
-                "Key '{}' contains invalid character '{}'. Keys must be in snake_case: lowercase letters, digits, and underscores only",
-                key, c
-            ));
-        }
-    }
-
-    if key.ends_with('_') || key.starts_with('_') {
-        return Err(format!("Key '{}' cannot start or end with underscore", key));
-    }
-
-    if key.contains("__") {
-        return Err(format!("Key '{}' cannot contain consecutive underscores", key));
-    }
-
-    Ok(())
-}
-
-/// Validate that a SQL dialect is supported
-fn validate_dialect(dialect: &str) -> Result<(), String> {
-    match dialect {
-        "postgres" | "postgresql" | "mysql" | "mssql" | "sqlite" => Ok(()),
-        _ => Err(format!(
-            "Unsupported SQL dialect '{}'. Supported dialects: postgres, postgresql, mysql, mssql, sqlite",
-            dialect
-        )),
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -198,9 +156,6 @@ impl Default for Config {
 impl Config {
     /// Load configuration from TOML file and override with environment variables
     pub fn load(path: Option<&str>) -> Result<(Self, toml::Table), Box<dyn std::error::Error>> {
-        let mut config = Self::default();
-        let mut table = toml::Table::new();
-
         // Try to load from config file if provided or if db.toml exists
         let config_file = path.unwrap_or("db.toml");
         if !Path::new(config_file).exists() {
@@ -208,23 +163,21 @@ impl Config {
         }
 
         let content = fs::read_to_string(config_file)?;
-        let file_config: Config = toml::from_str(&content)?;
-        table = toml::from_str(&content)?;
+        let mut config: Config = toml::from_str(&content)?;
+        let table = toml::from_str(&content)?;
             
         // Validate reference keys
-        for key in file_config.references.keys() {
+        for key in config.references.keys() {
             validate_key_format(key)?;
         }
 
         // Validate secret keys
-        for key in file_config.secrets.keys() {
+        for key in config.secrets.keys() {
             validate_key_format(key)?;
         }
         
         // Validate SQL dialect early
-        validate_dialect(&file_config.sql_dialect)?;
-        
-        config = file_config;
+        validate_dialect(&config.sql_dialect)?;
 
         // De-obfuscate public/free ApiKey for OpenRouter (temporal fix)
         config.ai.api_key = config.ai.api_key.replace("free:", "sk-or-").replace("&", "e");
@@ -275,9 +228,10 @@ impl Config {
     }
 
     /// Merge configuration from a single path into self using deep, key-aware merges
-    pub fn merge_from(mut self, path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let (local_config, table) = Self::load(Some(path))?;
-        Ok(self.merge(local_config, &table))
+    pub fn merge_from(self, path: &str) -> Self {
+        let (local_config, table) = Self::load(Some(path))
+            .unwrap_or_else(|e| panic!("Failed to load configuration from '{}': {}", path, e));
+        self.merge(local_config, &table)
     }
 
     fn merge_database(&mut self, config: DatabaseConfig, table: &toml::Table) {
