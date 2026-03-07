@@ -229,8 +229,21 @@ impl Config {
 
     /// Merge configuration from a single path into self using deep, key-aware merges
     pub fn merge_from(self, path: &str) -> Self {
-        let (local_config, table) = Self::load(Some(path))
-            .unwrap_or_else(|e| panic!("Failed to load configuration from '{}': {}", path, e));
+        // If path is a directory, look for db.toml inside it
+        let config_path = if Path::new(path).is_dir() {
+            let db_toml_path = format!("{}/db.toml", path.trim_end_matches('/'));
+            if Path::new(&db_toml_path).exists() {
+                db_toml_path
+            } else {
+                // No db.toml in directory, return self without merging
+                return self;
+            }
+        } else {
+            path.to_string()
+        };
+
+        let (local_config, table) = Self::load(Some(&config_path))
+            .unwrap_or_else(|e| panic!("Failed to load configuration from '{}': {}", config_path, e));
         self.merge(local_config, &table)
     }
 

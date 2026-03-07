@@ -347,8 +347,8 @@ pub async fn create_db(
     let role_exists = role_exists(&pool, &maintenance, api_user).await?;
 
     if !role_exists {
-        let sql = "CREATE ROLE '{{DB_API_USER}}' WITH LOGIN PASSWORD '{{DB_API_PASSWORD}}'";
-        run(&pool, config, &sql).await?;
+        let sql = "CREATE ROLE \"{{database.api.user}}\" WITH LOGIN PASSWORD '{{database.api.password}}'";
+        run(&pool, &maintenance, &sql).await?;
     }
 
     Ok(())
