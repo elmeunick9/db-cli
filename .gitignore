@@ -1,3 +1,6 @@
 target/
 Cargo.lock
 TODO.md
+db-cli-*.zip
+db-cli-*.tar.gz
+db-cli-*.exe
