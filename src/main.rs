@@ -5,6 +5,13 @@ mod log;
 mod commands;
 mod utils;
 
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum GenerateFormat {
+    Json,
+    Xsd,
+    Rust,
+}
+
 #[derive(Parser)]
 #[command(name = "db")]
 #[command(about = "DB-CLI - manage SQL databases", long_about = None)]
@@ -44,6 +51,17 @@ enum Commands {
     Test { version: Option<String> },
     /// Create a new release
     Release { },
+    /// Generate code or assets
+    #[command(alias = "gen")]
+    Generate {
+        #[arg(value_enum, default_value = "json")]
+        format: Option<GenerateFormat>,
+
+        #[arg(long)]
+        version: Option<String>,
+        #[arg(long, default_value = "./gen")]
+        output: Option<String>
+    },
 }
 
 fn main() {
@@ -117,6 +135,9 @@ fn main() {
                 }
                 Commands::Test { ref version } => {
                     commands::test::execute(&config, version.clone()).await
+                }
+                Commands::Generate { ref format, ref version, ref output } => {
+                    commands::generate::execute(&config, format.clone(), version.clone(), output.clone()).await
                 }
             }
         });
@@ -212,7 +233,7 @@ fn merge_config_chain(
         let candidate = current.join("db.toml");
         if candidate.exists() {
             let candidate_str = candidate.to_string_lossy().to_string();
-            config = config.merge_from(&candidate_str)?;
+            config = config.merge_from(&candidate_str);
         }
     }
 
