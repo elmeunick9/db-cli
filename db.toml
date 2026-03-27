@@ -11,13 +11,17 @@ host = "localhost"
 port = 5432
 ssl=false
 
-    [[sa]]
-    user = "postgres"
-    password = "postgres"
+[database.sa]
+user = "postgres"
+password = "postgres"
 
-    [[api]]
-    user = "api"
-    password = "0000"
+[database.api]
+user = "api"
+password = "0000"
+
+[[generate]]
+format = "json"
+output_dir = "./gen/json"
 
 [ai]
 enabled = true

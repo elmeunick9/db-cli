@@ -10,6 +10,14 @@ pub enum GenerateFormat {
     Json
 }
 
+impl GenerateFormat {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GenerateFormat::Json => "json",
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "db")]
 #[command(about = "DB-CLI - manage SQL databases", long_about = None)]

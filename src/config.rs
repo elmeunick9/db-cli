@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use crate::utils::validators::{validate_key_format, validate_dialect};
 
@@ -24,6 +24,7 @@ fn default_sql_dialect() -> String { "postgres".to_string() }
 fn default_log_secrets() -> bool { false }
 fn default_sql_base() -> SqlBase { SqlBase::Single("sql".to_string()) }
 fn default_working_db() -> Vec<String> { vec![] }
+fn default_generate_entries() -> Vec<GenerateEntry> { vec![] }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -51,6 +52,19 @@ impl Default for AiConfig {
             model: default_ai_model(),
             api_key: default_ai_api_key(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateEntry {
+    pub format: String,
+    #[serde(default)]
+    pub output_dir: Option<String>,
+}
+
+impl GenerateEntry {
+    pub fn matches_format(&self, format_name: &str) -> bool {
+        self.format.eq_ignore_ascii_case(format_name)
     }
 }
 
@@ -119,6 +133,8 @@ pub struct Config {
     pub database: DatabaseConfig,
     #[serde(default)]
     pub ai: AiConfig,
+    #[serde(default = "default_generate_entries")]
+    pub generate: Vec<GenerateEntry>,
     #[serde(default)]
     pub references: HashMap<String, ReferenceValue>,
     #[serde(default)]
@@ -147,6 +163,7 @@ impl Default for Config {
                 api: default_api(),
             },
             ai: AiConfig::default(),
+            generate: default_generate_entries(),
             references: HashMap::new(),
             secrets: HashMap::new(),
         }
@@ -214,6 +231,10 @@ impl Config {
                     self.references.insert(key.clone(), value.clone());
                 }
             }
+        }
+
+        if table.contains_key("generate") {
+            self.generate = config.generate;
         }
 
         if let Some(secret_table) = table.get("secrets").and_then(|v| v.as_table()) {
@@ -371,6 +392,16 @@ impl Config {
     /// Check if in development mode
     pub fn is_dev(&self) -> bool {
         self.mode == "dev" || self.mode == "development"
+    }
+
+    pub fn generate_output_dir(&self, format_name: &str) -> PathBuf {
+        if let Some(entry) = self.generate.iter().find(|entry| entry.matches_format(format_name)) {
+            if let Some(dir) = &entry.output_dir {
+                return PathBuf::from(dir);
+            }
+        }
+
+        PathBuf::from("gen").join(format_name)
     }
 }
 

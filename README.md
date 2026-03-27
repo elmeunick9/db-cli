@@ -135,6 +135,22 @@ These files must define a function that takes no parameters and returns a string
 
 Once all tests are loaded, the test runner will run them like normal functions and return an error if the returned string is not empty or `'OK'`.
 
+## Generate
+
+```
+db generate json
+```
+
+Allows you to generate metadata in the specified format and write it to an output directory.
+
+See `db.toml`:
+
+```
+[[generate]]
+format = "json"
+output_dir = "./gen/json"
+```
+
 # Setting up your DB
 
 db-cli doesn't create or manage your DB server, instead it expects access to an existing instance. For development it's recommended to setup an instance using Docker (or podman). E.g:
