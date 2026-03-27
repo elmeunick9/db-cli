@@ -7,9 +7,7 @@ mod utils;
 
 #[derive(Clone, Debug, clap::ValueEnum)]
 pub enum GenerateFormat {
-    Json,
-    Xsd,
-    Rust,
+    Json
 }
 
 #[derive(Parser)]
