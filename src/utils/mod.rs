@@ -4,3 +4,4 @@ pub mod fs;
 pub mod inspect;
 pub mod references;
 pub mod validators;
+pub mod write_json;

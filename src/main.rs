@@ -53,12 +53,10 @@ enum Commands {
     #[command(alias = "gen")]
     Generate {
         #[arg(value_enum, default_value = "json")]
-        format: Option<GenerateFormat>,
+        format: GenerateFormat,
 
         #[arg(long)]
         version: Option<String>,
-        #[arg(long, default_value = "./gen")]
-        output: Option<String>
     },
 }
 
@@ -134,8 +132,8 @@ fn main() {
                 Commands::Test { ref version } => {
                     commands::test::execute(&config, version.clone()).await
                 }
-                Commands::Generate { ref format, ref version, ref output } => {
-                    commands::generate::execute(&config, format.clone(), version.clone(), output.clone()).await
+                Commands::Generate { ref format, ref version } => {
+                    commands::generate::execute(&config, format.clone(), version.clone()).await
                 }
             }
         });
