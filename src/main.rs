@@ -49,29 +49,20 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    let root_config_path = find_root_config_path();
+    let root_config_path = find_root_config_path().unwrap_or_else(|| {
+        eprintln!("Failed to locate any db.toml from current directory up to filesystem root.");
+        std::process::exit(1);
+    });
 
-    // Load root configuration (from repo root, if found)
-    let root_config = match config::Config::load(root_config_path.as_deref()) {
-        Ok((cfg, _)) => cfg,
-        Err(e) => {
-            eprintln!("Failed to load root configuration: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let cwd = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("Failed to read current directory: {}", e);
+        std::process::exit(1);
+    });
 
-    // Load configuration from current working directory if it has a db.toml
-    let cwd_config = if std::path::Path::new("db.toml").exists() {
-        match config::Config::load(Some("db.toml")) {
-            Ok((cfg, _)) => cfg,
-            Err(e) => {
-                eprintln!("Failed to load configuration: {}", e);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        root_config.clone()
-    };
+    let cwd_config = load_cwd_config(&root_config_path, &cwd).unwrap_or_else(|e| {
+        eprintln!("Failed to load configuration chain: {}", e);
+        std::process::exit(1);
+    });
 
     // Determine which databases to work with
     let working_dbs = determine_working_dbs(&cwd_config);
@@ -88,8 +79,12 @@ fn main() {
     let mut any_failed = false;
     for db_path in working_dbs {
         // Load config for this specific database (with hierarchical overrides)
-        let config = root_config.clone().merge_from(&db_path);
-        let config = config::Config { base: config::SqlBase::Single(db_path.clone()), ..config };
+        let target_dir = resolve_target_dir(&cwd, &db_path);
+        let local_config = merge_config_chain(cwd_config.clone(), &cwd, &target_dir).unwrap_or_else(|e| {
+            eprintln!("Failed to load configuration chain for '{}': {}", db_path, e);
+            std::process::exit(1);
+        });
+        let config = config::Config { base: config::SqlBase::Single(db_path.clone()), ..local_config };
 
         if db_count > 1 {
             tracing::info!("Processing database: {}", db_path);
@@ -186,4 +181,55 @@ fn determine_working_dbs(cwd_config: &config::Config) -> Vec<String> {
     }
 
     cwd_config.working_db.clone()
+}
+
+fn load_cwd_config(
+    root_config_path: &str,
+    cwd: &std::path::Path,
+) -> Result<config::Config, Box<dyn std::error::Error>> {
+    let (root_config, _) = config::Config::load(Some(root_config_path))?;
+
+    let root_dir = std::path::Path::new(root_config_path)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+
+    merge_config_chain(root_config, root_dir, cwd)
+}
+
+fn merge_config_chain(
+    mut config: config::Config,
+    start_dir: &std::path::Path,
+    target_dir: &std::path::Path,
+) -> Result<config::Config, Box<dyn std::error::Error>> {
+    let rel = match target_dir.strip_prefix(start_dir) {
+        Ok(rel) => rel,
+        Err(_) => return Ok(config),
+    };
+
+    let mut current = start_dir.to_path_buf();
+    for component in rel.components() {
+        current.push(component);
+        let candidate = current.join("db.toml");
+        if candidate.exists() {
+            let candidate_str = candidate.to_string_lossy().to_string();
+            config = config.merge_from(&candidate_str)?;
+        }
+    }
+
+    Ok(config)
+}
+
+fn resolve_target_dir(cwd: &std::path::Path, db_path: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(db_path);
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    };
+
+    if path.extension().is_some_and(|ext| ext == "toml") {
+        path.parent().unwrap_or(&path).to_path_buf()
+    } else {
+        path
+    }
 }
