@@ -24,8 +24,8 @@ During the initialization process files are executed in the order defined in the
 - Layer 0: `/db.sql`, for extensions/users and other DB wide setup.
 - Layer 1: `**/schema.sql`, `**/*.table.sql`, `**/*.function.sql`, `**/*.view.sql`.
 - Layer 2: `**/*.trigger.sql`, `**/*.index.sql`.
-- Layer 3: `**/default.sql`,  `**/*.default.sql`.
-- Layer 4: `**/insert.sql`,  `**/*.insert.sql`.
+- Layer 3: `**/insert.sql`,  `**/*.insert.sql`. <-- For static data.
+- Layer 4: `**/default.sql`,  `**/*.default.sql`. <-- For default init data, not applied on migration.
 
 How to specify dependencies example:
 
