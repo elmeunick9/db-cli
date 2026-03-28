@@ -206,13 +206,16 @@ Example `db.toml`:
 # For development use "dev" or "development", anything else is production.
 mode = "dev"
 
-# Folder path relative to this config where you define the DB as in sql/<version>/<schema>/<sql_files>
+# Folder path relative to this config where you define the DB as in 
+# sql/<version>/<schema>/<sql_files>
 base = "sql"
 
-# Currently only "postgres" is supported. In the future you may specify here other dialects such as "mssql", "mysql" or "sqlite".
+# Currently only "postgres" is supported. In the future you may specify here 
+# other dialects such as "mssql", "mysql" or "sqlite".
 sql_dialect = "postgres"
 
-# Prepend SQL blocks with "SET search_path TO <schema>;" so you can use local references, e.g:
+# Prepend SQL blocks with "SET search_path TO <schema>;" so you can use local 
+# references, e.g:
 #   FOREIGN KEY ("story") REFERENCES "story" ("id")
 # instead of
 #   FOREIGN KEY ("story") REFERENCES "public"."story" ("id")
@@ -264,7 +267,8 @@ keep_max_releases = 5
 
 # The following are examples and is not configured by default.
 
-# Configuration relative to code/metadata generation. Can be repeated for multiple targets. 
+# Configuration relative to code/metadata generation. Can be repeated for 
+# multiple targets. 
 [[generate]]
     format = "json"
     output_dir = "./gen/json"
