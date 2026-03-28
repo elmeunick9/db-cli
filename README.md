@@ -2,15 +2,7 @@
 
 It's a very opinionated tool written in Rust for managing SQL databases (PostgreSQL) as infrastructure-as-code.
 
-Its main goal is to provide a solid workflow and structure for everything related to creating, migrating, testing, versioning, code generation (prepare) and deploying your DB.
-
-# Features
-
-* Specify schema using SQL in a well defined folder structure (see `sql` folder).
-* Use LLM to create up/down migration scripts.
-* Validate SQL code.
-* Manage the DB lifecycle.
-* Test the DB.
+Its main goal is to provide a solid workflow and structure for everything related to creating, migrating, testing, versioning, metadata generation, and deploying your DB.
 
 # Commands
 
@@ -118,6 +110,9 @@ Creates a new release. This involves renaming "next" folder to the new version n
 
 If the config `releases.keep_max` is used and the new release would exceed that amount the oldest version will be deleted.
 
+> [!NOTE]
+> If you're using source control (e.g. Git) you can still access older releases from history.
+
 ## Testing
 
 ```
@@ -151,6 +146,44 @@ format = "json"
 output_dir = "./gen/json"
 ```
 
+Outputs `./gen/json/<schema>.json`:
+
+```json
+{
+    "schema": "<schema>",
+    "tables": [{
+        "name": "<table_name>",
+        "columns": [{
+            "name": "<column>",
+            "ordinal_position": 1,
+            "data_type": "character varying",
+            "udt_name": "varchar",
+            "is_nullable": false,
+            "default": null
+        }, {
+            "name": "role",
+            "ordinal_position": 7,
+            "data_type": "USER-DEFINED",
+            "udt_name": "user_role",
+            "is_nullable": false,
+            "default": "'user'::auth.user_role" 
+        }, ...],
+        "primary_key": ["<column>"],
+        "foreign_keys": [{
+            "name": "<name>_fkey",
+            "columns": ["<column>"],
+            "referenced_schema": "<schema>",
+            "referenced_table": "<table>",
+            "referenced_columns": ["<column>"]
+        }, ...],
+    }, ...],
+    "enums": [{
+        "name": "user_role",
+        "values": ["admin", "user"]
+    }, ...]
+}
+```
+
 # Setting up your DB
 
 db-cli doesn't create or manage your DB server, instead it expects access to an existing instance. For development it's recommended to setup an instance using Docker (or podman). E.g:
@@ -163,6 +196,105 @@ docker run --name your-db-name -p 5432:5432 -e POSTGRES_PASSWORD=postgres -d pos
 # Configuration
 
 Configuration is managed through a `db.toml` file in your project root. This section documents advanced configuration features.
+
+Example `db.toml`:
+
+```toml
+# DB-CLI Configuration.
+# The following are default values.
+
+# For development use "dev" or "development", anything else is production.
+mode = "dev"
+
+# Folder path relative to this config where you define the DB as in sql/<version>/<schema>/<sql_files>
+base = "sql"
+
+# Currently only "postgres" is supported. In the future you may specify here other dialects such as "mssql", "mysql" or "sqlite".
+sql_dialect = "postgres"
+
+# Prepend SQL blocks with "SET search_path TO <schema>;" so you can use local references, e.g:
+#   FOREIGN KEY ("story") REFERENCES "story" ("id")
+# instead of
+#   FOREIGN KEY ("story") REFERENCES "public"."story" ("id")
+auto_set_search_path = true
+
+# If enabled no SQL will be actually sent to the DB.
+dry_run = false
+
+# Logs all sent SQL to stdout.
+log_sql = true
+
+# Include secrets in the SQL log.
+log_secrets = false
+
+# When releasing a new version, delete the oldest if exceeding this amount.
+keep_max_releases = 5
+
+# Database related configuration. 
+[database]
+    # The name of the DB that will be created / used.
+    name = "postgres"
+
+    # The name of the DB from which we can drop / create other DBs.
+    maintenance_db_name = "postgres"
+
+    # Connection settings
+    host = "localhost"
+    port = 5432
+    ssl = false
+
+    # Database configuration relative to user "sa" (system administrator).
+    # This user must have enough permissions to create / drop databases.
+    [database.sa]
+    user = "postgres"
+    password = "postgres"
+
+    # Database configuration relative the user "api" (application interface).
+    # If the user doesn't exist, it will be created.
+    [database.api]
+    user = "api"
+    password = "0000"
+
+# Configuration relative to AI features (migration --plan).
+[ai]
+    enabled = true
+    provider = "OpenRouter"
+    model = "minimax/minimax-m2.1"
+    api_key = "<token>"
+
+# The following are examples and is not configured by default.
+
+# Configuration relative to code/metadata generation. Can be repeated for multiple targets. 
+[[generate]]
+    format = "json"
+    output_dir = "./gen/json"
+
+[references]
+    # Every project needs to define this in order to apply migrations.
+    meta = ["public", "meta"]
+
+[secrets]
+    pass = "<secret>"
+
+```
+
+# Environment Variables
+The following environment variables can be user to overwrite configuration settings:
+
+```
+DB_HOST
+DB_PORT
+DB_SA_USER
+DB_SA_PASSWORD
+DB_API_USER
+DB_API_PASSWORD
+DB_NAME
+DB_SSL
+DB_MODE
+DB_BASE
+DB_LOG_SQL
+DATABASE_URL
+```
 
 ## References
 
