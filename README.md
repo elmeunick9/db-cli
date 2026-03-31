@@ -158,6 +158,8 @@ Outputs `./gen/json/<schema>.json`:
             "ordinal_position": 1,
             "data_type": "character varying",
             "udt_name": "varchar",
+            "domain_schema": null,
+            "domain_name": null,
             "is_nullable": false,
             "default": null
         }, {
@@ -165,6 +167,8 @@ Outputs `./gen/json/<schema>.json`:
             "ordinal_position": 7,
             "data_type": "USER-DEFINED",
             "udt_name": "user_role",
+            "domain_schema": null,
+            "domain_name": null,
             "is_nullable": false,
             "default": "'user'::auth.user_role" 
         }, ...],
@@ -180,6 +184,17 @@ Outputs `./gen/json/<schema>.json`:
     "enums": [{
         "name": "user_role",
         "values": ["admin", "user"]
+    }, ...],
+    "domains": [{
+        "name": "<name>",
+        "data_type": "text",
+        "udt_name": "text",
+        "is_nullable": false,
+        "default": null,
+        "check_constraints": [{
+            "name": "<name>_check",
+            "definition": "CHECK (VALUE <> ''::text)"
+        }]
     }, ...]
 }
 ```

@@ -8,6 +8,8 @@ pub struct ColumnInfo {
     pub name: String,
     pub data_type: String,
     pub udt_name: String,
+    pub domain_schema: Option<String>,
+    pub domain_name: Option<String>,
     pub is_nullable: bool,
     pub default: Option<String>,
 }
@@ -23,6 +25,7 @@ pub struct SchemaInfo {
     pub name: String,
     pub tables: Vec<TableInfo>,
     pub enums: Vec<EnumInfo>,
+    pub domains: Vec<DomainInfo>,
 }
 
 pub struct ForeignKeyInfo {
@@ -38,10 +41,30 @@ pub struct EnumInfo {
     pub values: Vec<String>,
 }
 
+pub struct DomainInfo {
+    pub name: String,
+    pub data_type: String,
+    pub udt_name: String,
+    pub is_nullable: bool,
+    pub default: Option<String>,
+    pub check_constraints: Vec<DomainConstraintInfo>,
+}
+
+pub struct DomainConstraintInfo {
+    pub name: String,
+    pub definition: String,
+}
+
 pub async fn inspect_schema(pool: &DbPool, schema: &str) -> Result<SchemaInfo, sqlx::Error> {
     let tables = list_tables(pool, schema).await?;
     let enums = list_enums(pool, schema).await?;
-    Ok(SchemaInfo { name: schema.to_string(), tables, enums })
+    let domains = list_domains(pool, schema).await?;
+    Ok(SchemaInfo {
+        name: schema.to_string(),
+        tables,
+        enums,
+        domains,
+    })
 }
 
 pub async fn list_tables(pool: &DbPool, schema: &str) -> Result<Vec<TableInfo>, sqlx::Error> {
@@ -132,7 +155,7 @@ pub async fn list_columns(
     match pool {
         DbPool::Postgres(p) => {
             let column_rows = sqlx::query(
-                "SELECT ordinal_position, column_name, data_type, udt_name, is_nullable, column_default FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
+                "SELECT ordinal_position, column_name, data_type, udt_name, domain_schema, domain_name, is_nullable, column_default FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
             )
             .bind(schema)
             .bind(table)
@@ -146,6 +169,8 @@ pub async fn list_columns(
                     name: row.get("column_name"),
                     data_type: row.get("data_type"),
                     udt_name: row.get("udt_name"),
+                    domain_schema: row.get("domain_schema"),
+                    domain_name: row.get("domain_name"),
                     is_nullable: row
                         .get::<String, _>("is_nullable")
                         .eq_ignore_ascii_case("YES"),
@@ -175,6 +200,61 @@ pub async fn list_enums(pool: &DbPool, schema: &str) -> Result<Vec<EnumInfo>, sq
             Ok(rows
                 .into_iter()
                 .map(|row| EnumInfo { name: row.get("typname"), values: row.get("values") })
+                .collect())
+        }
+        DbPool::MySql(_) => Err(sqlx::Error::Configuration(Box::new(io::Error::new(
+            io::ErrorKind::Other,
+            "introspection currently only supports Postgres",
+        )))),
+        DbPool::DryRun => Err(sqlx::Error::Configuration(Box::new(io::Error::new(
+            io::ErrorKind::Other,
+            "inspecting schema requires a real Postgres pool",
+        )))),
+    }
+}
+
+pub async fn list_domains(pool: &DbPool, schema: &str) -> Result<Vec<DomainInfo>, sqlx::Error> {
+    match pool {
+        DbPool::Postgres(p) => {
+            let domain_rows = sqlx::query(
+                "SELECT d.domain_name, d.data_type, d.udt_name, t.typnotnull AS not_null, d.domain_default FROM information_schema.domains d JOIN pg_namespace n ON n.nspname = d.domain_schema JOIN pg_type t ON t.typnamespace = n.oid AND t.typname = d.domain_name WHERE d.domain_schema = $1 ORDER BY d.domain_name",
+            )
+            .bind(schema)
+            .fetch_all(p)
+            .await?;
+
+            let constraint_rows = sqlx::query(
+                "SELECT t.typname AS domain_name, c.conname, pg_get_constraintdef(c.oid, true) AS definition FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace JOIN pg_constraint c ON c.contypid = t.oid AND c.contype = 'c' WHERE t.typtype = 'd' AND n.nspname = $1 ORDER BY t.typname, c.conname",
+            )
+            .bind(schema)
+            .fetch_all(p)
+            .await?;
+
+            let mut constraints: HashMap<String, Vec<DomainConstraintInfo>> = HashMap::new();
+            for row in constraint_rows {
+                let domain_name: String = row.get("domain_name");
+                constraints
+                    .entry(domain_name)
+                    .or_default()
+                    .push(DomainConstraintInfo {
+                        name: row.get("conname"),
+                        definition: row.get("definition"),
+                    });
+            }
+
+            Ok(domain_rows
+                .into_iter()
+                .map(|row| {
+                    let name: String = row.get("domain_name");
+                    DomainInfo {
+                        check_constraints: constraints.remove(&name).unwrap_or_default(),
+                        name,
+                        data_type: row.get("data_type"),
+                        udt_name: row.get("udt_name"),
+                        is_nullable: !row.get::<bool, _>("not_null"),
+                        default: row.get("domain_default"),
+                    }
+                })
                 .collect())
         }
         DbPool::MySql(_) => Err(sqlx::Error::Configuration(Box::new(io::Error::new(
