@@ -138,6 +138,10 @@ db generate json
 
 Allows you to generate metadata in the specified format and write it to an output directory.
 
+Template-based generators can optionally define a `generate.rhai` script. `fn transform(context)` is optional, and scripts can also register inline Handlebars helpers through `fn handlebars_helpers()`.
+
+Common helpers are registered automatically.
+
 See `db.toml`:
 
 ```

@@ -35,38 +35,20 @@ fn to_xsd_type(column) {
     return "xs:string";
 }
 
-fn enrich_schema(schema) {
-    let tables = schema["tables"];
-    let table_count = len(tables);
-    for table_index in 0..table_count {
-        let table = tables[table_index];
-        let table_name = table["name"];
-        table["xsd_type_name"] = table_name + "Type";
+fn xsd_type(helper) {
+    to_xsd_type(helper["args"][0])
+}
 
-        let columns = table["columns"];
-        let column_count = len(columns);
-        for column_index in 0..column_count {
-            let column = columns[column_index];
-            column["xsd_type"] = to_xsd_type(column);
-            column["min_occurs"] = if column["is_nullable"] { "0" } else { "1" };
-            columns[column_index] = column;
-        }
-
-        table["columns"] = columns;
-        tables[table_index] = table;
+fn min_occurs(helper) {
+    if helper["args"][0]["is_nullable"] {
+        "0"
+    } else {
+        "1"
     }
-    schema["tables"] = tables;
+}
 
-    let domains = schema["domains"];
-    let domain_count = len(domains);
-    for domain_index in 0..domain_count {
-        let domain = domains[domain_index];
-        domain["xsd_base_type"] = to_xsd_type(domain);
-        domains[domain_index] = domain;
-    }
-    schema["domains"] = domains;
-
-    schema
+fn handlebars_helpers() {
+    ["xsd_type", "min_occurs"]
 }
 
 fn build_outputs(schemas) {
@@ -101,13 +83,6 @@ fn build_outputs(schemas) {
 
 fn transform(context) {
     let schemas = context["schemas"];
-    let schema_count = len(schemas);
-    for schema_index in 0..schema_count {
-        let schema = schemas[schema_index];
-        schemas[schema_index] = enrich_schema(schema);
-    }
-
-    context["schemas"] = schemas;
     context["outputs"] = build_outputs(schemas);
     context
 }

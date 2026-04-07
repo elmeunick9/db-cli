@@ -14,15 +14,15 @@
 {{/each}}
 {{#each schema.domains}}
   <xs:simpleType name="{{name}}">
-    <xs:restriction base="{{xsd_base_type}}" />
+    <xs:restriction base="{{xsd_type this}}" />
   </xs:simpleType>
 {{/each}}
-  <xs:complexType name="{{table.xsd_type_name}}">
+  <xs:complexType name="{{table.name}}Type">
     <xs:sequence>
 {{#each table.columns}}
-      <xs:element name="{{name}}" type="{{xsd_type}}" minOccurs="{{min_occurs}}" />
+      <xs:element name="{{name}}" type="{{xsd_type this}}" minOccurs="{{min_occurs this}}" />
 {{/each}}
     </xs:sequence>
   </xs:complexType>
-  <xs:element name="{{table.name}}" type="tns:{{table.xsd_type_name}}" />
+  <xs:element name="{{table.name}}" type="tns:{{table.name}}Type" />
 </xs:schema>

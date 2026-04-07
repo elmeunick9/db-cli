@@ -1,4 +1,6 @@
 use crate::utils::inspect::SchemaInfo;
+use crate::utils::handlebars_helpers;
+use crate::utils::rhai_helpers;
 use handlebars::Handlebars;
 use rhai::serde::{from_dynamic, to_dynamic};
 use rhai::{Dynamic, Engine, Scope};
@@ -27,9 +29,15 @@ pub fn write_from_template_dir(
     let mut handlebars = Handlebars::new();
     handlebars.register_escape_fn(handlebars::no_escape);
     handlebars.set_strict_mode(true);
+    handlebars_helpers::register_common_helpers(&mut handlebars);
+
+    let transform_script = load_transform_script(input_dir)?;
+    if let Some(script) = transform_script.as_deref() {
+        rhai_helpers::register_handlebars_helpers(&mut handlebars, script)?;
+    }
 
     let context = build_context(schemas, format_name, version)?;
-    let context = apply_transform(input_dir, &context)?;
+    let context = apply_transform(transform_script.as_deref(), &context)?;
 
     if let Some(outputs) = context.get("outputs").and_then(Value::as_array) {
         render_declared_outputs(&handlebars, input_dir, output_dir, &context, outputs)?;
@@ -159,22 +167,35 @@ fn build_context(
     Ok(Value::Object(object))
 }
 
-fn apply_transform(input_dir: &Path, context: &Value) -> Result<Value, Box<dyn std::error::Error>> {
+fn load_transform_script(input_dir: &Path) -> Result<Option<String>, Box<dyn std::error::Error>> {
     let script_path = input_dir.join(TRANSFORM_SCRIPT_NAME);
     if !script_path.exists() {
-        return Ok(context.clone());
+        return Ok(None);
     }
 
-    let script = fs::read_to_string(&script_path)?;
+    Ok(Some(fs::read_to_string(&script_path)?))
+}
+
+fn apply_transform(script: Option<&str>, context: &Value) -> Result<Value, Box<dyn std::error::Error>> {
+    let Some(script) = script else {
+        return Ok(context.clone());
+    };
+
     let engine = Engine::new();
     let ast = engine.compile(script)?;
     let dynamic_context = to_dynamic(context)?;
-    let transformed = engine.call_fn::<Dynamic>(
+    let transformed = match engine.call_fn::<Dynamic>(
         &mut Scope::new(),
         &ast,
         "transform",
         (dynamic_context,),
-    )?;
+    ) {
+        Ok(transformed) => transformed,
+        Err(err) if is_missing_rhai_function(&err.to_string(), "transform") => {
+            return Ok(context.clone())
+        }
+        Err(err) => return Err(err.into()),
+    };
 
     Ok(from_dynamic(&transformed)?)
 }
@@ -235,4 +256,8 @@ fn get_required_string<'a>(
         .get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| format!("generate outputs entries require string field '{}'", key).into())
+}
+
+fn is_missing_rhai_function(message: &str, function_name: &str) -> bool {
+    message.contains("Function not found") && message.contains(function_name)
 }
