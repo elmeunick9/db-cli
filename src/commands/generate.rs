@@ -2,7 +2,6 @@ use crate::config::Config;
 use crate::utils::db::get_db_pool;
 use crate::utils::fs;
 use crate::utils::inspect;
-use crate::utils::write_json::write_json;
 
 pub async fn execute(config: &Config, format: crate::GenerateFormat, version: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let sql_base = config.sql_base();
@@ -30,7 +29,7 @@ pub async fn execute(config: &Config, format: crate::GenerateFormat, version: Op
         println!("Inspecting schema: {}", schema);
         let schema_info = inspect::inspect_schema(&pool, &schema).await?;
         match format {
-            crate::GenerateFormat::Json => write_json(&output_path, &schema_info)?,
+            crate::GenerateFormat::Json => inspect::write_json(&output_path, &schema_info)?,
         }
     }
 

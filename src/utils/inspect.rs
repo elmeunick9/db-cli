@@ -1,8 +1,12 @@
 use crate::utils::db::DbPool;
+use serde::Serialize;
 use sqlx::Row;
 use std::collections::HashMap;
+use std::fs as std_fs;
 use std::io;
+use std::path::PathBuf;
 
+#[derive(Serialize)]
 pub struct ColumnInfo {
     pub ordinal_position: i32,
     pub name: String,
@@ -14,6 +18,7 @@ pub struct ColumnInfo {
     pub default: Option<String>,
 }
 
+#[derive(Serialize)]
 pub struct TableInfo {
     pub name: String,
     pub columns: Vec<ColumnInfo>,
@@ -21,13 +26,15 @@ pub struct TableInfo {
     pub foreign_keys: Vec<ForeignKeyInfo>,
 }
 
+#[derive(Serialize)]
 pub struct SchemaInfo {
-    pub name: String,
+    pub schema: String,
     pub tables: Vec<TableInfo>,
     pub enums: Vec<EnumInfo>,
     pub domains: Vec<DomainInfo>,
 }
 
+#[derive(Serialize)]
 pub struct ForeignKeyInfo {
     pub name: String,
     pub columns: Vec<String>,
@@ -36,11 +43,13 @@ pub struct ForeignKeyInfo {
     pub referenced_columns: Vec<String>,
 }
 
+#[derive(Serialize)]
 pub struct EnumInfo {
     pub name: String,
     pub values: Vec<String>,
 }
 
+#[derive(Serialize)]
 pub struct DomainInfo {
     pub name: String,
     pub data_type: String,
@@ -50,6 +59,7 @@ pub struct DomainInfo {
     pub check_constraints: Vec<DomainConstraintInfo>,
 }
 
+#[derive(Serialize)]
 pub struct DomainConstraintInfo {
     pub name: String,
     pub definition: String,
@@ -60,11 +70,22 @@ pub async fn inspect_schema(pool: &DbPool, schema: &str) -> Result<SchemaInfo, s
     let enums = list_enums(pool, schema).await?;
     let domains = list_domains(pool, schema).await?;
     Ok(SchemaInfo {
-        name: schema.to_string(),
+        schema: schema.to_string(),
         tables,
         enums,
         domains,
     })
+}
+
+pub fn write_json(
+    output_dir: &PathBuf,
+    schema_info: &SchemaInfo,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file_name = format!("{}.json", schema_info.schema);
+    let file_path = output_dir.join(file_name);
+    let content = serde_json::to_string(schema_info)?;
+    std_fs::write(file_path, content)?;
+    Ok(())
 }
 
 pub async fn list_tables(pool: &DbPool, schema: &str) -> Result<Vec<TableInfo>, sqlx::Error> {
