@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="urn:db:{{schema.schema}}:{{table.name}}"
+           xmlns:tns="urn:db:{{schema.schema}}:{{table.name}}"
+           elementFormDefault="qualified">
+{{#each schema.enums}}
+  <xs:simpleType name="{{name}}">
+    <xs:restriction base="xs:string">
+{{#each values}}
+      <xs:enumeration value="{{this}}" />
+{{/each}}
+    </xs:restriction>
+  </xs:simpleType>
+{{/each}}
+{{#each schema.domains}}
+  <xs:simpleType name="{{name}}">
+    <xs:restriction base="{{xsd_base_type}}" />
+  </xs:simpleType>
+{{/each}}
+  <xs:complexType name="{{table.xsd_type_name}}">
+    <xs:sequence>
+{{#each table.columns}}
+      <xs:element name="{{name}}" type="{{xsd_type}}" minOccurs="{{min_occurs}}" />
+{{/each}}
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="{{table.name}}" type="tns:{{table.xsd_type_name}}" />
+</xs:schema>

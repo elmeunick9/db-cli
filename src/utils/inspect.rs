@@ -2,9 +2,7 @@ use crate::utils::db::DbPool;
 use serde::Serialize;
 use sqlx::Row;
 use std::collections::HashMap;
-use std::fs as std_fs;
 use std::io;
-use std::path::PathBuf;
 
 #[derive(Serialize)]
 pub struct ColumnInfo {
@@ -75,17 +73,6 @@ pub async fn inspect_schema(pool: &DbPool, schema: &str) -> Result<SchemaInfo, s
         enums,
         domains,
     })
-}
-
-pub fn write_json(
-    output_dir: &PathBuf,
-    schema_info: &SchemaInfo,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let file_name = format!("{}.json", schema_info.schema);
-    let file_path = output_dir.join(file_name);
-    let content = serde_json::to_string(schema_info)?;
-    std_fs::write(file_path, content)?;
-    Ok(())
 }
 
 pub async fn list_tables(pool: &DbPool, schema: &str) -> Result<Vec<TableInfo>, sqlx::Error> {

@@ -5,19 +5,6 @@ mod log;
 mod commands;
 mod utils;
 
-#[derive(Clone, Debug, clap::ValueEnum)]
-pub enum GenerateFormat {
-    Json
-}
-
-impl GenerateFormat {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            GenerateFormat::Json => "json",
-        }
-    }
-}
-
 #[derive(Parser)]
 #[command(name = "db")]
 #[command(about = "DB-CLI - manage SQL databases", long_about = None)]
@@ -60,8 +47,8 @@ enum Commands {
     /// Generate code or assets
     #[command(alias = "gen")]
     Generate {
-        #[arg(value_enum, default_value = "json")]
-        format: GenerateFormat,
+        #[arg(default_value = "json")]
+        format: String,
 
         #[arg(long)]
         version: Option<String>,

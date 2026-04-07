@@ -59,6 +59,8 @@ impl Default for AiConfig {
 pub struct GenerateEntry {
     pub format: String,
     #[serde(default)]
+    pub input_dir: Option<String>,
+    #[serde(default)]
     pub output_dir: Option<String>,
 }
 
@@ -402,6 +404,14 @@ impl Config {
         }
 
         PathBuf::from("gen").join(format_name)
+    }
+
+    pub fn generate_input_dir(&self, format_name: &str) -> Option<PathBuf> {
+        self.generate
+            .iter()
+            .find(|entry| entry.matches_format(format_name))
+            .and_then(|entry| entry.input_dir.as_ref())
+            .map(PathBuf::from)
     }
 }
 

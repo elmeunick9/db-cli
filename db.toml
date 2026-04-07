@@ -23,6 +23,11 @@ password = "0000"
 format = "json"
 output_dir = "./gen/json"
 
+[[generate]]
+format = "xsd"
+input_dir = "./templates/xsd"
+output_dir = "./gen/xsd"
+
 [ai]
 enabled = true
 provider = "OpenRouter"
