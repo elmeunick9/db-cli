@@ -3,39 +3,98 @@ use handlebars::{
     Context, Handlebars, Helper, HelperDef, JsonRender, RenderContext, RenderError,
     RenderErrorReason, ScopedJson,
 };
-use std::cmp::Ordering;
 use serde_json::Value;
+use std::cmp::Ordering;
 
-type ValueHelperFn = fn(&Helper<'_>, &Handlebars<'_>, &Context) -> Result<Value, RenderError>;
+const COMMON_HELPER_NAMES: &[&str] = &[
+    "all",
+    "any",
+    "camel_case",
+    "default",
+    "eq",
+    "gt",
+    "gte",
+    "isdefined",
+    "join",
+    "json",
+    "kebab_case",
+    "lower",
+    "lt",
+    "lte",
+    "neq",
+    "not",
+    "pascal_case",
+    "replace",
+    "screaming_snake_case",
+    "snake_case",
+    "sub",
+    "sum",
+    "title_case",
+    "upper",
+];
 
-pub fn register_common_helpers(handlebars: &mut Handlebars<'_>) {
-    handlebars.register_helper("all", Box::new(ValueHelper(all_helper)));
-    handlebars.register_helper("any", Box::new(ValueHelper(any_helper)));
-    handlebars.register_helper("camel_case", Box::new(ValueHelper(camel_case_helper)));
-    handlebars.register_helper("default", Box::new(ValueHelper(default_helper)));
-    handlebars.register_helper("eq", Box::new(ValueHelper(eq_helper)));
-    handlebars.register_helper("gt", Box::new(ValueHelper(gt_helper)));
-    handlebars.register_helper("gte", Box::new(ValueHelper(gte_helper)));
-    handlebars.register_helper("isdefined", Box::new(ValueHelper(isdefined_helper)));
-    handlebars.register_helper("join", Box::new(ValueHelper(join_helper)));
-    handlebars.register_helper("json", Box::new(ValueHelper(json_helper)));
-    handlebars.register_helper("kebab_case", Box::new(ValueHelper(kebab_case_helper)));
-    handlebars.register_helper("lower", Box::new(ValueHelper(lower_helper)));
-    handlebars.register_helper("lt", Box::new(ValueHelper(lt_helper)));
-    handlebars.register_helper("lte", Box::new(ValueHelper(lte_helper)));
-    handlebars.register_helper("neq", Box::new(ValueHelper(neq_helper)));
-    handlebars.register_helper("not", Box::new(ValueHelper(not_helper)));
-    handlebars.register_helper("pascal_case", Box::new(ValueHelper(pascal_case_helper)));
-    handlebars.register_helper("replace", Box::new(ValueHelper(replace_helper)));
-    handlebars.register_helper("screaming_snake_case", Box::new(ValueHelper(screaming_snake_case_helper)));
-    handlebars.register_helper("snake_case", Box::new(ValueHelper(snake_case_helper)));
-    handlebars.register_helper("sub", Box::new(ValueHelper(sub_helper)));
-    handlebars.register_helper("sum", Box::new(ValueHelper(sum_helper)));
-    handlebars.register_helper("title_case", Box::new(ValueHelper(title_case_helper)));
-    handlebars.register_helper("upper", Box::new(ValueHelper(upper_helper)));
+pub fn common_helper_names() -> &'static [&'static str] {
+    COMMON_HELPER_NAMES
 }
 
-struct ValueHelper(ValueHelperFn);
+pub fn register_common_helpers(handlebars: &mut Handlebars<'_>) {
+    for helper_name in common_helper_names() {
+        handlebars.register_helper(helper_name, Box::new(ValueHelper { name: helper_name }));
+    }
+}
+
+pub fn evaluate_common_helper(
+    helper_name: &str,
+    args: &[Value],
+    root: Option<&Value>,
+) -> Result<Value, String> {
+    match helper_name {
+        "all" => Ok(Value::Bool(args.iter().all(is_truthy))),
+        "any" => Ok(Value::Bool(args.iter().any(is_truthy))),
+        "camel_case" => convert_case_value(args, Case::Camel),
+        "default" => Ok(if is_blank(get_arg(args, 0)?) {
+            get_arg(args, 1)?.clone()
+        } else {
+            get_arg(args, 0)?.clone()
+        }),
+        "eq" => Ok(Value::Bool(compare_chain(args, |left, right| left == right)?)),
+        "gt" => Ok(Value::Bool(compare_chain(args, |left, right| {
+            compare_values(left, right) == Some(Ordering::Greater)
+        })?)),
+        "gte" => Ok(Value::Bool(compare_chain(args, |left, right| {
+            compare_values(left, right).is_some_and(|ordering| ordering != Ordering::Less)
+        })?)),
+        "isdefined" => Ok(Value::Bool(!args.is_empty())),
+        "join" => join_value(args),
+        "json" => json_value(args, root),
+        "kebab_case" => convert_case_value(args, Case::Kebab),
+        "lower" => Ok(Value::String(value_as_string(get_arg(args, 0)?).to_lowercase())),
+        "lt" => Ok(Value::Bool(compare_chain(args, |left, right| {
+            compare_values(left, right) == Some(Ordering::Less)
+        })?)),
+        "lte" => Ok(Value::Bool(compare_chain(args, |left, right| {
+            compare_values(left, right).is_some_and(|ordering| ordering != Ordering::Greater)
+        })?)),
+        "neq" => Ok(Value::Bool(compare_chain(args, |left, right| left != right)?)),
+        "not" => Ok(Value::Bool(!is_truthy(get_arg(args, 0)?))),
+        "pascal_case" => convert_case_value(args, Case::Pascal),
+        "replace" => Ok(Value::String(
+            value_as_string(get_arg(args, 0)?)
+                .replace(&value_as_string(get_arg(args, 1)?), &value_as_string(get_arg(args, 2)?)),
+        )),
+        "screaming_snake_case" => convert_case_value(args, Case::UpperSnake),
+        "snake_case" => convert_case_value(args, Case::Snake),
+        "sub" => sub_value(args),
+        "sum" => sum_value(args),
+        "title_case" => convert_case_value(args, Case::Title),
+        "upper" => Ok(Value::String(value_as_string(get_arg(args, 0)?).to_uppercase())),
+        _ => Err(format!("unknown helper '{}'", helper_name)),
+    }
+}
+
+struct ValueHelper {
+    name: &'static str,
+}
 
 impl HelperDef for ValueHelper {
     fn call_inner<'reg: 'rc, 'rc>(
@@ -45,62 +104,28 @@ impl HelperDef for ValueHelper {
         context: &'rc Context,
         _: &mut RenderContext<'reg, 'rc>,
     ) -> Result<ScopedJson<'rc>, RenderError> {
-        Ok(ScopedJson::Derived((self.0)(helper, registry, context)?))
+        let _ = registry;
+        let args = helper
+            .params()
+            .iter()
+            .map(|param| param.value().clone())
+            .collect::<Vec<_>>();
+
+        let value = evaluate_common_helper(self.name, &args, Some(context.data()))
+            .map_err(render_error)?;
+        Ok(ScopedJson::Derived(value))
     }
 }
 
-fn all_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(
-        helper.params().iter().all(|param| is_truthy(param.value())),
-    ))
+fn convert_case_value(args: &[Value], case: Case) -> Result<Value, String> {
+    Ok(Value::String(value_as_string(get_arg(args, 0)?).to_case(case)))
 }
 
-fn any_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(
-        helper.params().iter().any(|param| is_truthy(param.value())),
-    ))
-}
-
-fn camel_case_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    convert_case_helper(helper, Case::Camel)
-}
-
-fn default_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    let value = get_param(helper, 0)?;
-    let fallback = get_param(helper, 1)?;
-
-    Ok(if is_blank(value) {
-        fallback.clone()
-    } else {
-        value.clone()
-    })
-}
-
-fn eq_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(compare_chain(helper, |left, right| left == right)?))
-}
-
-fn gt_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(compare_chain(helper, |left, right| compare_values(left, right) == Some(Ordering::Greater))?))
-}
-
-fn gte_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(compare_chain(helper, |left, right| {
-        compare_values(left, right).is_some_and(|ordering| ordering != Ordering::Less)
-    })?))
-}
-
-fn isdefined_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(
-        helper.param(0).is_some_and(|param| !param.is_value_missing()),
-    ))
-}
-
-fn join_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    let values = get_param(helper, 0)?;
-    let separator = helper
-        .param(1)
-        .map(|value| value_as_string(value.value()))
+fn join_value(args: &[Value]) -> Result<Value, String> {
+    let values = get_arg(args, 0)?;
+    let separator = args
+        .get(1)
+        .map(value_as_string)
         .unwrap_or_else(|| ", ".to_string());
 
     Ok(Value::String(match values {
@@ -109,120 +134,56 @@ fn join_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<V
     }))
 }
 
-fn json_helper(helper: &Helper<'_>, _: &Handlebars<'_>, context: &Context) -> Result<Value, RenderError> {
-    let value = helper.param(0).map(|value| value.value()).unwrap_or_else(|| context.data());
+fn json_value(args: &[Value], root: Option<&Value>) -> Result<Value, String> {
+    let value = args.first().or(root).unwrap_or(&Value::Null);
     serde_json::to_string(value)
         .map(Value::String)
-        .map_err(|err| render_error(err.to_string()))
+        .map_err(|err| err.to_string())
 }
 
-fn kebab_case_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    convert_case_helper(helper, Case::Kebab)
-}
-
-fn lower_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::String(value_as_string(get_param(helper, 0)?).to_lowercase()))
-}
-
-fn lt_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(compare_chain(helper, |left, right| compare_values(left, right) == Some(Ordering::Less))?))
-}
-
-fn lte_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(compare_chain(helper, |left, right| {
-        compare_values(left, right).is_some_and(|ordering| ordering != Ordering::Greater)
-    })?))
-}
-
-fn neq_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(compare_chain(helper, |left, right| left != right)?))
-}
-
-fn not_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::Bool(!is_truthy(get_param(helper, 0)?)))
-}
-
-fn pascal_case_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    convert_case_helper(helper, Case::Pascal)
-}
-
-fn replace_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    let value = value_as_string(get_param(helper, 0)?);
-    let from = value_as_string(get_param(helper, 1)?);
-    let to = value_as_string(get_param(helper, 2)?);
-    Ok(Value::String(value.replace(&from, &to)))
-}
-
-fn screaming_snake_case_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    convert_case_helper(helper, Case::UpperSnake)
-}
-
-fn snake_case_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    convert_case_helper(helper, Case::Snake)
-}
-
-fn sub_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    let values = helper.params();
-    if values.is_empty() {
-        return Err(render_error("sub requires at least one parameter"));
+fn sub_value(args: &[Value]) -> Result<Value, String> {
+    if args.is_empty() {
+        return Err("sub requires at least one parameter".to_string());
     }
 
-    let first = number_value(values[0].value())?;
-    let result = if values.len() == 1 {
+    let first = number_value(&args[0])?;
+    let result = if args.len() == 1 {
         -first
     } else {
-        values[1..]
+        args[1..]
             .iter()
-            .try_fold(first, |acc, param| -> Result<f64, RenderError> {
-                Ok(acc - number_value(param.value())?)
+            .try_fold(first, |acc, value| -> Result<f64, String> {
+                Ok(acc - number_value(value)?)
             })?
     };
 
     Ok(number_json(result))
 }
 
-fn sum_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    let values = helper.params();
-    if values.iter().any(|param| matches!(param.value(), Value::String(_))) {
-        return Ok(Value::String(
-            values.iter().map(|param| value_as_string(param.value())).collect(),
-        ));
+fn sum_value(args: &[Value]) -> Result<Value, String> {
+    if args.iter().any(|value| matches!(value, Value::String(_))) {
+        return Ok(Value::String(args.iter().map(value_as_string).collect()));
     }
 
-    let result = values
+    let result = args
         .iter()
-        .try_fold(0.0, |acc, param| -> Result<f64, RenderError> {
-            Ok(acc + number_value(param.value())?)
+        .try_fold(0.0, |acc, value| -> Result<f64, String> {
+            Ok(acc + number_value(value)?)
         })?;
     Ok(number_json(result))
 }
 
-fn title_case_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    convert_case_helper(helper, Case::Title)
-}
-
-fn upper_helper(helper: &Helper<'_>, _: &Handlebars<'_>, _: &Context) -> Result<Value, RenderError> {
-    Ok(Value::String(value_as_string(get_param(helper, 0)?).to_uppercase()))
-}
-
-fn convert_case_helper(helper: &Helper<'_>, case: Case) -> Result<Value, RenderError> {
-    Ok(Value::String(
-        value_as_string(get_param(helper, 0)?).to_case(case),
-    ))
-}
-
 fn compare_chain(
-    helper: &Helper<'_>,
+    values: &[Value],
     predicate: impl Fn(&Value, &Value) -> bool,
-) -> Result<bool, RenderError> {
-    let params = helper.params();
-    if params.len() < 2 {
-        return Err(render_error("comparison helpers require at least two parameters"));
+) -> Result<bool, String> {
+    if values.len() < 2 {
+        return Err("comparison helpers require at least two parameters".to_string());
     }
 
-    Ok(params
+    Ok(values
         .windows(2)
-        .all(|pair| predicate(pair[0].value(), pair[1].value())))
+        .all(|pair| predicate(&pair[0], &pair[1])))
 }
 
 fn compare_values(left: &Value, right: &Value) -> Option<Ordering> {
@@ -234,11 +195,10 @@ fn compare_values(left: &Value, right: &Value) -> Option<Ordering> {
     }
 }
 
-fn get_param<'a>(helper: &'a Helper<'_>, index: usize) -> Result<&'a Value, RenderError> {
-    helper
-        .param(index)
-        .map(|value| value.value())
-        .ok_or_else(|| render_error(format!("missing helper parameter at index {}", index)))
+fn get_arg(values: &[Value], index: usize) -> Result<&Value, String> {
+    values
+        .get(index)
+        .ok_or_else(|| format!("missing helper parameter at index {}", index))
 }
 
 fn value_as_string(value: &Value) -> String {
@@ -256,12 +216,12 @@ fn render_value(value: &Value) -> String {
     }
 }
 
-fn number_value(value: &Value) -> Result<f64, RenderError> {
+fn number_value(value: &Value) -> Result<f64, String> {
     match value {
         Value::Number(number) => number
             .as_f64()
-            .ok_or_else(|| render_error("numeric helper received unsupported number")),
-        _ => Err(render_error("numeric helper parameters must be numbers")),
+            .ok_or_else(|| "numeric helper received unsupported number".to_string()),
+        _ => Err("numeric helper parameters must be numbers".to_string()),
     }
 }
 

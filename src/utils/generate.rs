@@ -2,11 +2,10 @@ use crate::utils::inspect::SchemaInfo;
 use crate::utils::handlebars_helpers;
 use crate::utils::rhai_helpers;
 use handlebars::Handlebars;
-use rhai::serde::{from_dynamic, to_dynamic};
-use rhai::{Dynamic, Engine, Scope};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use walkdir::WalkDir;
 
 const TRANSFORM_SCRIPT_NAME: &str = "generate.rhai";
@@ -36,16 +35,16 @@ pub fn write_from_template_dir(
         rhai_helpers::register_handlebars_helpers(&mut handlebars, script)?;
     }
 
+    let handlebars = Arc::new(handlebars);
     let context = build_context(schemas, format_name, version)?;
-    let context = apply_transform(transform_script.as_deref(), &context)?;
 
-    if let Some(outputs) = context.get("outputs").and_then(Value::as_array) {
-        render_declared_outputs(&handlebars, input_dir, output_dir, &context, outputs)?;
+    if let Some(script) = transform_script.as_deref() {
+        rhai_helpers::run_main_script(script, &context, input_dir, output_dir, Arc::clone(&handlebars))?;
         copy_static_files(input_dir, output_dir)?;
         return Ok(());
     }
 
-    render_template_tree(&handlebars, input_dir, output_dir, &context)
+    render_template_tree(handlebars.as_ref(), input_dir, output_dir, &context)
 }
 
 pub fn write_json_default(
@@ -96,45 +95,6 @@ fn render_template_tree(
     Ok(())
 }
 
-fn render_declared_outputs(
-    handlebars: &Handlebars<'_>,
-    input_dir: &Path,
-    output_dir: &Path,
-    root_context: &Value,
-    outputs: &[Value],
-) -> Result<(), Box<dyn std::error::Error>> {
-    for output in outputs {
-        let output_object = output
-            .as_object()
-            .ok_or("generate outputs entries must be objects")?;
-        let context = merge_context(root_context, output_object.get("context"))?;
-        let path_template = get_required_string(output_object, "path")?;
-        let rendered_relative_path = handlebars.render_template(path_template, &context)?;
-        let output_file = output_dir.join(rendered_relative_path);
-
-        if let Some(parent) = output_file.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        if let Some(content_template) = output_object.get("content").and_then(Value::as_str) {
-            let rendered = handlebars.render_template(content_template, &context)?;
-            fs::write(output_file, rendered)?;
-            continue;
-        }
-
-        if let Some(template_path) = output_object.get("template").and_then(Value::as_str) {
-            let template = fs::read_to_string(input_dir.join(template_path))?;
-            let rendered = handlebars.render_template(&template, &context)?;
-            fs::write(output_file, rendered)?;
-            continue;
-        }
-
-        return Err("generate outputs entries must define either 'template' or 'content'".into());
-    }
-
-    Ok(())
-}
-
 fn copy_static_files(input_dir: &Path, output_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     for entry in WalkDir::new(input_dir).into_iter().filter_map(|entry| entry.ok()) {
         let path = entry.path();
@@ -176,30 +136,6 @@ fn load_transform_script(input_dir: &Path) -> Result<Option<String>, Box<dyn std
     Ok(Some(fs::read_to_string(&script_path)?))
 }
 
-fn apply_transform(script: Option<&str>, context: &Value) -> Result<Value, Box<dyn std::error::Error>> {
-    let Some(script) = script else {
-        return Ok(context.clone());
-    };
-
-    let engine = Engine::new();
-    let ast = engine.compile(script)?;
-    let dynamic_context = to_dynamic(context)?;
-    let transformed = match engine.call_fn::<Dynamic>(
-        &mut Scope::new(),
-        &ast,
-        "transform",
-        (dynamic_context,),
-    ) {
-        Ok(transformed) => transformed,
-        Err(err) if is_missing_rhai_function(&err.to_string(), "transform") => {
-            return Ok(context.clone())
-        }
-        Err(err) => return Err(err.into()),
-    };
-
-    Ok(from_dynamic(&transformed)?)
-}
-
 fn render_relative_path(
     handlebars: &Handlebars<'_>,
     relative_path: &Path,
@@ -227,37 +163,3 @@ fn is_handlebars_template(path: &Path) -> bool {
     path.extension().and_then(|ext| ext.to_str()) == Some("hbs")
 }
 
-fn merge_context(
-    root_context: &Value,
-    extra_context: Option<&Value>,
-) -> Result<Value, Box<dyn std::error::Error>> {
-    let mut merged = root_context
-        .as_object()
-        .cloned()
-        .ok_or("generate root context must be an object")?;
-
-    if let Some(extra_context) = extra_context {
-        let extra_object = extra_context
-            .as_object()
-            .ok_or("generate outputs context must be an object")?;
-        for (key, value) in extra_object {
-            merged.insert(key.clone(), value.clone());
-        }
-    }
-
-    Ok(Value::Object(merged))
-}
-
-fn get_required_string<'a>(
-    object: &'a Map<String, Value>,
-    key: &str,
-) -> Result<&'a str, Box<dyn std::error::Error>> {
-    object
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| format!("generate outputs entries require string field '{}'", key).into())
-}
-
-fn is_missing_rhai_function(message: &str, function_name: &str) -> bool {
-    message.contains("Function not found") && message.contains(function_name)
-}

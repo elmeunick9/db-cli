@@ -51,38 +51,27 @@ fn handlebars_helpers() {
     ["xsd_type", "min_occurs"]
 }
 
-fn build_outputs(schemas) {
-    let outputs = [];
+fn main() {
+    save("catalog.xml", transform(context, load("catalog.xml.hbs")));
 
-    let catalog = #{};
-    catalog["path"] = "catalog.xml";
-    catalog["template"] = "catalog.xml.hbs";
-    outputs.push(catalog);
+    let schemas = context["schemas"];
+    let table_template = load("table.xsd.hbs");
 
-    let schema_count = len(schemas);
-    for schema_index in 0..schema_count {
+    for schema_index in 0..len(schemas) {
         let schema = schemas[schema_index];
         let tables = schema["tables"];
 
         for table_index in 0..len(tables) {
             let table = tables[table_index];
-            let output = #{};
-            output["path"] = schema["schema"] + "/" + table["name"] + ".xsd";
-            output["template"] = "table.xsd.hbs";
-
             let output_context = #{};
+            output_context["format"] = context["format"];
+            output_context["version"] = context["version"];
+            output_context["schemas"] = schemas;
             output_context["schema"] = schema;
             output_context["table"] = table;
-            output["context"] = output_context;
-            outputs.push(output);
+
+            let output_path = schema["schema"] + "/" + table["name"] + ".xsd";
+            save(output_path, transform(output_context, table_template));
         }
     }
-
-    outputs
-}
-
-fn transform(context) {
-    let schemas = context["schemas"];
-    context["outputs"] = build_outputs(schemas);
-    context
 }

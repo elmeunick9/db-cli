@@ -138,7 +138,9 @@ db generate json
 
 Allows you to generate metadata in the specified format and write it to an output directory.
 
-Template-based generators can optionally define a `generate.rhai` script. `fn transform(context)` is optional, and scripts can also register inline Handlebars helpers through `fn handlebars_helpers()`.
+Template-based generators can optionally define a `generate.rhai` script. When present, it must define `fn main()` and receives the root generation payload through the global `context` variable. Scripts can render templates with `transform(context, template_str)`, read template files with `load(path)`, write output files with `save(path, content)`, and register inline Handlebars helpers through `fn handlebars_helpers()`.
+
+Built-in Handlebars helpers are also available inside Rhai under the `hbs::` namespace.
 
 Common helpers are registered automatically.
 
