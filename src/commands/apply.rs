@@ -7,27 +7,27 @@ use crate::utils::fs;
 use crate::utils::db::{self, DbPool};
 
 /// Get the current database version from the meta table
-pub async fn get_current_version(pool: &DbPool, config: &Config) -> Result<Option<String>, Box<dyn std::error::Error>> {
+pub async fn get_current_version(pool: &DbPool, config: &Config) -> Result<String, Box<dyn std::error::Error>> {
     if config.dry_run {
-        return Ok(None);
+        return Ok(String::new());
     }
 
     match pool {
         DbPool::Postgres(p) => {
             let sql = "SELECT \"value\" FROM {{ref.meta}} WHERE \"key\" = 'db_version'";
-            let result: Option<String> = sqlx::query_scalar(
+            let result: String = sqlx::query_scalar(
                 &db::inject_variables(sql, config)
             )
-                .fetch_optional(p)
+                .fetch_one(p)
                 .await?;
             Ok(result)
         }
         DbPool::MySql(p) => {
             let sql = "SELECT `value` FROM {{ref.meta}} WHERE `key` = 'db_version'";
-            let result: Option<String> = sqlx::query_scalar(
+            let result: String = sqlx::query_scalar(
                 &db::inject_variables(sql, config)
             )
-                .fetch_optional(p)
+                .fetch_one(p)
                 .await?;
             Ok(result)
         }
@@ -40,12 +40,12 @@ pub async fn get_current_version(pool: &DbPool, config: &Config) -> Result<Optio
         //         .await?;
         //     Ok(result)
         // }
-        DbPool::DryRun => Ok(None),
+        DbPool::DryRun => Ok(String::new()),
     }
 }
 
 /// Find migration files needed to reach target version using BFS to find shortest path
-fn find_migrations_to_target(sql_base: &str, current_version: Option<String>, target_version: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn find_migrations_to_target(sql_base: &str, current_version: &str, target_version: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let versions = fs::list_versions(sql_base)?;
     let mut numeric_versions: Vec<String> = versions
         .iter()
@@ -62,10 +62,7 @@ fn find_migrations_to_target(sql_base: &str, current_version: Option<String>, ta
         target_version.to_string()
     };
 
-    let start_version = current_version.unwrap_or_else(|| {
-        numeric_versions.first().cloned().unwrap_or_else(|| "".to_string())
-    });
-
+    let start_version = current_version.to_string();
     debug!("Finding migrations from '{}' to '{}'", start_version, actual_target);
 
     // Build a graph of available migrations
@@ -133,7 +130,7 @@ fn find_migrations_to_target(sql_base: &str, current_version: Option<String>, ta
             for next in neighbors {
                 if !visited.contains(next) {
                     visited.insert(next.clone());
-                    parent_map.insert(next.clone(), current.clone());
+                    parent_map.insert(next.clone(), current.to_string());
                     queue.push_back(next.clone());
                 }
             }
@@ -181,13 +178,13 @@ pub async fn execute(config: &Config, target_version: Option<String>) -> Result<
 
     // Get current version
     let current_version = get_current_version(&pool, &config_no_dry).await?;
-    info!("Current database version: {:?}", current_version.as_deref().unwrap_or("none"));
+    info!("Current database version: {:?}", current_version);
 
     // Find migration files needed
-    let migrations = find_migrations_to_target(&sql_base, current_version.clone(), &target)?;
+    let migrations = find_migrations_to_target(&sql_base, &current_version, &target)?;
 
     if migrations.is_empty() {
-        if current_version.as_deref() == Some(&target) {
+        if current_version == target {
             info!("Already at version '{}'", target);
         } else {
             info!("No migrations needed to reach version '{}'", target);

@@ -223,3 +223,24 @@ pub fn find_test_files(sql_base: &str, version: &str) -> Result<Vec<(String, Str
     
     Ok(test_files)
 }
+
+
+pub fn ensure_relative_path(base_dir: &Path, relative_path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let candidate = Path::new(relative_path);
+    if candidate.is_absolute() {
+        return Err(format!("Paths must be relative: {}", relative_path).into());
+    }
+
+    let mut clean_path = PathBuf::new();
+    for component in candidate.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(part) => clean_path.push(part),
+            std::path::Component::ParentDir | std::path::Component::Prefix(_) | std::path::Component::RootDir => {
+                return Err(format!("Paths cannot escape their base directory: {}", relative_path).into());
+            }
+        }
+    }
+
+    Ok(base_dir.join(clean_path))
+}

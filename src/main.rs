@@ -47,11 +47,11 @@ enum Commands {
     /// Generate code or assets
     #[command(alias = "gen")]
     Generate {
-        #[arg(default_value = "json")]
-        format: String,
-
         #[arg(long)]
         version: Option<String>,
+
+        #[arg(default_value = "all")]
+        format: Option<String>,
     },
 }
 
@@ -128,7 +128,7 @@ fn main() {
                     commands::test::execute(&config, version.clone()).await
                 }
                 Commands::Generate { ref format, ref version } => {
-                    commands::generate::execute(&config, format.clone(), version.clone()).await
+                    commands::generate::execute(&config, version.clone(), format.clone()).await
                 }
             }
         });

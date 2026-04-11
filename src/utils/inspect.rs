@@ -1,10 +1,10 @@
 use crate::utils::db::DbPool;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use sqlx::Row;
 use std::collections::HashMap;
 use std::io;
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ColumnInfo {
     pub ordinal_position: i32,
     pub name: String,
@@ -16,7 +16,7 @@ pub struct ColumnInfo {
     pub default: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct TableInfo {
     pub name: String,
     pub columns: Vec<ColumnInfo>,
@@ -24,7 +24,7 @@ pub struct TableInfo {
     pub foreign_keys: Vec<ForeignKeyInfo>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SchemaInfo {
     pub schema: String,
     pub tables: Vec<TableInfo>,
@@ -32,7 +32,7 @@ pub struct SchemaInfo {
     pub domains: Vec<DomainInfo>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ForeignKeyInfo {
     pub name: String,
     pub columns: Vec<String>,
@@ -41,13 +41,13 @@ pub struct ForeignKeyInfo {
     pub referenced_columns: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct EnumInfo {
     pub name: String,
     pub values: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DomainInfo {
     pub name: String,
     pub data_type: String,
@@ -57,7 +57,7 @@ pub struct DomainInfo {
     pub check_constraints: Vec<DomainConstraintInfo>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DomainConstraintInfo {
     pub name: String,
     pub definition: String,

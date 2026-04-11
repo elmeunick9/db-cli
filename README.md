@@ -133,10 +133,10 @@ Once all tests are loaded, the test runner will run them like normal functions a
 ## Generate
 
 ```
-db generate json
+db generate [version] [format]
 ```
 
-Allows you to generate metadata in the specified format and write it to an output directory.
+Allows you to generate metadata from the configured DB server in the specified format, by default configured ones. This command will initialize the DB in dev, and just do a version check in production.
 
 Template-based generators can optionally define a `generate.rhai` script. When present, it must define `fn main()` and receives the root generation payload through the global `context` variable. Scripts can render templates with `transform(context, template_str)`, read template files with `load(path)`, write output files with `save(path, content)`, and register inline Handlebars helpers through `fn handlebars_helpers()`.
 

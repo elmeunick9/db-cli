@@ -61,13 +61,7 @@ pub struct GenerateEntry {
     #[serde(default)]
     pub input_dir: Option<String>,
     #[serde(default)]
-    pub output_dir: Option<String>,
-}
-
-impl GenerateEntry {
-    pub fn matches_format(&self, format_name: &str) -> bool {
-        self.format.eq_ignore_ascii_case(format_name)
-    }
+    pub output_dir: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -394,24 +388,6 @@ impl Config {
     /// Check if in development mode
     pub fn is_dev(&self) -> bool {
         self.mode == "dev" || self.mode == "development"
-    }
-
-    pub fn generate_output_dir(&self, format_name: &str) -> PathBuf {
-        if let Some(entry) = self.generate.iter().find(|entry| entry.matches_format(format_name)) {
-            if let Some(dir) = &entry.output_dir {
-                return PathBuf::from(dir);
-            }
-        }
-
-        PathBuf::from("gen").join(format_name)
-    }
-
-    pub fn generate_input_dir(&self, format_name: &str) -> Option<PathBuf> {
-        self.generate
-            .iter()
-            .find(|entry| entry.matches_format(format_name))
-            .and_then(|entry| entry.input_dir.as_ref())
-            .map(PathBuf::from)
     }
 }
 
