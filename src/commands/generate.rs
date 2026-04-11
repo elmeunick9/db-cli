@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use handlebars::Handlebars;
-use rhai::{Dynamic, EvalAltResult, FnPtr, ImmutableString, NativeCallContext, Scope};
+use rhai::{Dynamic, EvalAltResult, ImmutableString, Scope};
 use rhai::serde::{from_dynamic, to_dynamic};
 use std::sync::{Arc, Mutex};
 
@@ -10,7 +10,7 @@ type RhaiResult<T> = Result<T, Box<EvalAltResult>>;
 
 use crate::config::{Config, GenerateEntry};
 use crate::utils::db::get_db_pool;
-use crate::utils::{fs, handlebars_helpers};
+use crate::utils::fs;
 use crate::utils::inspect;
 
 fn rhai_error(message: impl Into<String>) -> Box<EvalAltResult> {
@@ -68,7 +68,7 @@ async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Res
     let mut handlebars = Handlebars::new();
     handlebars.register_escape_fn(handlebars::no_escape);
     handlebars.set_strict_mode(true);
-    handlebars_helpers::register_common_helpers(&mut handlebars);
+    crate::utils::handlebars::register_handlebars_helpers(&mut handlebars);
 
     let script = load_script(&input_path)?;
     let mut engine = rhai::Engine::new();
@@ -76,6 +76,7 @@ async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Res
     let mut scope = Scope::new();
     let context = serde_json::to_value(&schema_infos)?;
     scope.push_dynamic("context", rhai::serde::to_dynamic(context)?);
+    crate::utils::handlebars::register_handlebars_rhai_module(&mut engine);
 
     let hb_shared = Arc::new(Mutex::new(handlebars));
     let shared_ast = std::sync::Arc::new(ast);
