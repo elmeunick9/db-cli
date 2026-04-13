@@ -60,7 +60,7 @@ CREATE TABLE "ban" (
     "can_login"         boolean             NOT NULL DEFAULT true,
     "can_comment"       boolean             NOT NULL DEFAULT true,
     "can_publish"       boolean             NOT NULL DEFAULT true,
-    "expire_at"         timestamp           NOT NULL,
+    "_expire_at"         timestamp           NOT NULL,
     PRIMARY KEY ("id"),
     FOREIGN KEY ("user") REFERENCES "user" ("id") ON DELETE CASCADE,
     FOREIGN KEY ("moderator") REFERENCES "user" ("id") ON DELETE CASCADE

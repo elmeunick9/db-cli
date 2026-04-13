@@ -20,7 +20,7 @@
   <xs:complexType name="{{table.name}}Type">
     <xs:sequence>
 {{#each table.columns}}
-      <xs:element name="{{name}}" type="{{xsd_type this}}" minOccurs="{{min_occurs this}}" />
+      <xs:element name="{{name}}" type="{{xsd_type this}}" minOccurs="{{min_occurs this}}" isReadOnly="{{is_read_only this}}"/>
 {{/each}}
     </xs:sequence>
   </xs:complexType>
