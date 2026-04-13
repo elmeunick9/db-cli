@@ -134,7 +134,7 @@ fn main() {
         });
         
         if let Err(e) = result {
-            eprintln!("Error processing '{}': {}", db_path, e);
+            eprintln!("Error at db_path '{}': {}", db_path, e);
             any_failed = true;
         }
     }

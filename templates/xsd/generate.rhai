@@ -35,23 +35,20 @@ fn to_xsd_type(column) {
     return "xs:string";
 }
 
-fn xsd_type(helper) {
-    to_xsd_type(helper["args"][0])
-}
-
-fn min_occurs(helper) {
-    if helper["args"][0]["is_nullable"] {
+fn min_occurs(column) {
+    if column["is_nullable"] {
         "0"
     } else {
         "1"
     }
 }
 
-fn handlebars_helpers() {
-    ["xsd_type", "min_occurs"]
-}
-
 fn main() {
+    print("Registering Handlebars helpers...");
+    register("xsd_type", "to_xsd_type");
+    register("min_occurs", "min_occurs");
+
+    print("Rendering catalog.xml...");
     save("catalog.xml", transform(context, load("catalog.xml.hbs")));
 
     let schemas = context["schemas"];
@@ -71,6 +68,7 @@ fn main() {
             output_context["table"] = table;
 
             let output_path = schema["schema"] + "/" + table["name"] + ".xsd";
+            print("Rendering table.xsd (" + table.name + ")...");
             save(output_path, transform(output_context, table_template));
         }
     }

@@ -26,6 +26,11 @@ fn load_script(input_dir: &Path) -> Result<String, DynError> {
     Ok(std::fs::read_to_string(&script_path)?)
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct HandlebarsContext {
+    schemas: Vec<inspect::SchemaInfo>,
+}
+
 async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Result<(), DynError> {
     std::fs::create_dir_all(&format.output_dir)?;
     println!("Generating code for format {}", format.format);
@@ -74,12 +79,20 @@ async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Res
     let mut engine = rhai::Engine::new();
     let ast = engine.compile(script)?;
     let mut scope = Scope::new();
-    let context = serde_json::to_value(&schema_infos)?;
+    let context = serde_json::to_value(&HandlebarsContext { schemas: schema_infos })?;
     scope.push_dynamic("context", rhai::serde::to_dynamic(context)?);
     crate::utils::handlebars::register_handlebars_rhai_module(&mut engine);
 
     let hb_shared = Arc::new(Mutex::new(handlebars));
     let shared_ast = std::sync::Arc::new(ast);
+
+    engine.on_print(|s| {
+        println!("[rhai] {s}");
+    });
+
+    engine.on_debug(|msg, src, pos| {
+        println!("[rhai debug] {msg} at {pos:?}");
+    });
 
     engine.register_fn(
         "transform",
@@ -138,10 +151,16 @@ async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Res
                     out: &mut dyn handlebars::Output| -> Result<(), handlebars::RenderError> {
                     
                     let engine = rhai::Engine::new();
-                    let args: Vec<rhai::Dynamic> = h.params()
+                    let args: Result<Vec<Dynamic>, Box<EvalAltResult>> = h.params()
                         .iter()
-                        .map(|p| rhai::Dynamic::from(p.value().clone()))
+                        .map(|p| rhai::serde::to_dynamic(p.value().clone()))
                         .collect();
+
+                    let args = args.map_err(|e| {
+                        handlebars::RenderErrorReason::Other(format!(
+                            "Failed to convert arguments for Rhai function '{}': {}", rhai_fn_name, e
+                        ))
+                    })?;
 
                     // If rhai_fn_name is defined as 'my_func(a, b)' but args.len() is 3,
                     // Rhai will return an EvalAltResult::ErrorFunctionNotFound.
