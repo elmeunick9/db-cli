@@ -36,6 +36,7 @@ static HELPERS: LazyLock<HashMap<&'static str, HelperFn>> = LazyLock::new(|| {
         ("sum", sum as HelperFn),
         ("title_case", title_case as HelperFn),
         ("upper", upper as HelperFn),
+        ("contains", contains as HelperFn),
     ])
 });
 
@@ -240,10 +241,34 @@ fn compare_chain(args: &[Value], predicate: impl Fn(&Value, &Value) -> bool) -> 
 fn compare_values(left: &Value, right: &Value) -> Option<Ordering> {
     match (left, right) {
         (Value::Number(left), Value::Number(right)) => left.as_f64()?.partial_cmp(&right.as_f64()?),
-        (Value::String(left), Value::String(right)) => Some(left.cmp(right)),
+        (Value::String(left), Value::String(right)) => 
+            match (left.parse::<f64>(), right.parse::<f64>()) {
+                (Ok(l), Ok(r)) => l.partial_cmp(&r),
+                _ => Some(left.cmp(right)),
+            }
+        (Value::String(l), Value::Number(r)) => l.parse::<f64>().ok()?.partial_cmp(&r.as_f64()?),
+        (Value::Number(l), Value::String(r)) => l.as_f64()?.partial_cmp(&r.parse::<f64>().ok()?),
         (Value::Bool(left), Value::Bool(right)) => Some(left.cmp(right)),
         _ => None,
     }
+}
+
+fn contains(args: &[Value], _: Option<&Value>) -> Result<Value, String> {
+    if args.len() != 2 {
+        return Err("contains expects exactly 2 arguments".into());
+    }
+
+    let haystack = &args[0];
+    let needle = &args[1];
+
+    let result = match (haystack, needle) {
+        (Value::Array(arr), _) => arr.iter().any(|v| v == needle),
+        (Value::String(s), Value::String(sub)) => s.contains(sub),
+        (Value::Object(map), Value::String(key)) => map.contains_key(key),
+        _ => false,
+    };
+
+    Ok(Value::Bool(result))
 }
 
 fn arg(args: &[Value], index: usize) -> Result<&Value, String> {
@@ -262,6 +287,9 @@ fn string(value: &Value) -> String {
 fn render_value(value: &Value) -> String {
     match value {
         Value::Array(_) | Value::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+        Value::Bool(b) => {
+            if *b { "true".into() } else { "".into() }
+        }
         _ => string(value),
     }
 }

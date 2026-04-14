@@ -164,7 +164,7 @@ async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Res
 
                     // If rhai_fn_name is defined as 'my_func(a, b)' but args.len() is 3,
                     // Rhai will return an EvalAltResult::ErrorFunctionNotFound.
-                    let result: String = engine.call_fn(
+                    let result: Dynamic = engine.call_fn(
                         &mut rhai::Scope::new(), 
                         &ast, 
                         &rhai_fn_name, 
@@ -175,7 +175,19 @@ async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Res
                         ))
                     })?;
 
-                    out.write(&result).map_err(|e| handlebars::RenderErrorReason::Other(e.to_string()))?;
+                    match result.type_name() {
+                        "bool" => {
+                            let b = result.clone_cast::<bool>();
+                            if b {
+                                out.write("true")?;
+                            } else {
+                                out.write("")?;
+                            }
+                        }
+                        _ => {
+                            out.write(&result.to_string())?;
+                        }
+                    }
                     Ok(())
                 }),
             );

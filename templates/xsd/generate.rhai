@@ -36,7 +36,7 @@ fn to_xsd_type(column) {
 }
 
 fn min_occurs(column) {
-    if column["is_nullable"] { "0" } else { "1" }
+    if column["is_nullable"] { 0 } else { 1 }
 }
 
 fn set_read_only(table, column_name, value) {
