@@ -3,7 +3,7 @@ fn to_xsd_type(column) {
         return "tns:" + column["domain_name"];
     }
 
-    let udt_name = column["udt_name"];
+    let udt_name = lower(column["udt_name"]);
     if udt_name == "bool" {
         return "xs:boolean";
     }
@@ -111,7 +111,7 @@ fn main() {
             output_context["table"] = table;
 
             let output_path = schema["schema"] + "/" + table["name"] + ".xsd";
-            print("Rendering table.xsd (" + table.name + ")...");
+            print("Rendering table.xsd (" + lower(table.name) + ")...");
             save(output_path, transform(output_context, table_template));
         }
     }

@@ -150,7 +150,15 @@ async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Res
                     _: &mut handlebars::RenderContext<'_, '_>, 
                     out: &mut dyn handlebars::Output| -> Result<(), handlebars::RenderError> {
                     
-                    let engine = rhai::Engine::new();
+                    let mut engine = rhai::Engine::new();
+                    crate::utils::handlebars::register_handlebars_rhai_module(&mut engine);
+                    engine.on_print(|s| {
+                        println!("[Hanndlebars -> rhai] {s}");
+                    });
+                    engine.on_debug(|msg, _src, pos| {
+                        println!("[Hanndlebars -> rhai debug] {msg} at {pos:?}");
+                    });
+
                     let args: Result<Vec<Dynamic>, Box<EvalAltResult>> = h.params()
                         .iter()
                         .map(|p| rhai::serde::to_dynamic(p.value().clone()))
