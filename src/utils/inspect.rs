@@ -100,7 +100,38 @@ pub async fn list_tables(pool: &DbPool, schema: &str) -> Result<Vec<TableInfo>, 
 
             let mut foreign_keys: HashMap<String, Vec<ForeignKeyInfo>> = HashMap::new();
             let fk_rows = sqlx::query(
-                "SELECT kcu.table_name, tc.constraint_name, kcu.column_name, ccu.table_schema AS referenced_schema, ccu.table_name AS referenced_table, ccu.column_name AS referenced_column FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.constraint_schema = kcu.constraint_schema JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.constraint_schema = ccu.constraint_schema WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1 ORDER BY kcu.table_name, tc.constraint_name, kcu.ordinal_position",
+                r#"
+                -- sql
+                SELECT 
+                    kcu.table_name, 
+                    tc.constraint_name, 
+                    kcu.column_name, 
+                    ccu.table_schema AS referenced_schema, 
+                    ccu.table_name AS referenced_table, 
+                    ccu.column_name AS referenced_column 
+                FROM 
+                    information_schema.table_constraints AS tc 
+                JOIN 
+                    information_schema.key_column_usage AS kcu 
+                    ON tc.constraint_name = kcu.constraint_name 
+                    AND tc.table_schema = kcu.table_schema
+                JOIN 
+                    information_schema.referential_constraints AS rc
+                    ON tc.constraint_name = rc.constraint_name
+                    AND tc.table_schema = rc.constraint_schema
+                JOIN 
+                    information_schema.key_column_usage AS ccu
+                    ON rc.unique_constraint_name = ccu.constraint_name
+                    AND rc.unique_constraint_schema = ccu.constraint_schema
+                    AND kcu.position_in_unique_constraint = ccu.ordinal_position
+                WHERE 
+                    tc.constraint_type = 'FOREIGN KEY' 
+                    AND tc.table_schema = $1 
+                ORDER BY 
+                    kcu.table_name, 
+                    tc.constraint_name, 
+                    kcu.ordinal_position;
+                "#,
             )
             .bind(schema)
             .fetch_all(p)
