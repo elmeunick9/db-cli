@@ -4,6 +4,10 @@ pub fn validate_key_format(key: &str) -> Result<(), String> {
         return Err("Key cannot be empty".to_string());
     }
 
+    if key.starts_with('_') || key.ends_with('_') {
+        return Err(format!("Key '{}' cannot start or end with underscore", key));
+    }
+
     // Check if it matches snake_case pattern: lowercase, digits, underscores
     // Must start with lowercase letter, can contain underscores and digits
     if !key.chars().next().unwrap().is_lowercase() {
@@ -17,10 +21,6 @@ pub fn validate_key_format(key: &str) -> Result<(), String> {
                 key, c
             ));
         }
-    }
-
-    if key.ends_with('_') || key.starts_with('_') {
-        return Err(format!("Key '{}' cannot start or end with underscore", key));
     }
 
     if key.contains("__") {
