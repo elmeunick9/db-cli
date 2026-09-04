@@ -94,6 +94,7 @@ fn main() {
     register("is_read_only", "is_read_only");
 
     print("Rendering catalog.xml...");
+    context["users"] = query_table("auth", "user");
     save("catalog.xml", transform(context, load("catalog.xml.hbs")));
 
     let schemas = preprocess(context["schemas"]);

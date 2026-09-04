@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 
 use handlebars::Handlebars;
 use rhai::{Dynamic, EvalAltResult, ImmutableString, Scope};
-use rhai::serde::{from_dynamic, to_dynamic};
+use rhai::serde::from_dynamic;
 use std::sync::{Arc, Mutex};
 
 type DynError = Box<dyn std::error::Error>;
@@ -69,6 +70,14 @@ async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Res
         return Err(format!("input_dir does not exist or is not a directory: {}", input_path.display()).into());
     }
 
+    let mut table_rows = HashMap::new();
+    for schema in &schema_infos {
+        for table in &schema.tables {
+            let rows = inspect::query_table(&pool, &schema.schema, &table.name).await?;
+            table_rows.insert(format!("{}.{}", schema.schema, table.name), rows);
+        }
+    }
+
     // 3) Load rhai script and register helpers
     let mut handlebars = Handlebars::new();
     handlebars.register_escape_fn(handlebars::no_escape);
@@ -81,7 +90,26 @@ async fn generate(config: &Config, format: &GenerateEntry, version: &str) -> Res
     let mut scope = Scope::new();
     let context = serde_json::to_value(&HandlebarsContext { schemas: schema_infos })?;
     scope.push_dynamic("context", rhai::serde::to_dynamic(context)?);
+    let table_rows = table_rows
+        .into_iter()
+        .map(|(key, rows)| {
+            let value = rhai::serde::to_dynamic(serde_json::Value::Array(rows))?;
+            Ok::<_, Box<EvalAltResult>>((key, value))
+        })
+        .collect::<Result<HashMap<_, _>, _>>()?;
     crate::utils::handlebars::register_handlebars_rhai_module(&mut engine);
+
+    engine.register_fn(
+        "query_table",
+        move |schema: ImmutableString, table: ImmutableString| -> RhaiResult<Dynamic> {
+            let key = format!("{}.{}", schema, table);
+            let rows = table_rows
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| rhai::Array::new().into());
+            Ok(rows)
+        },
+    );
 
     let hb_shared = Arc::new(Mutex::new(handlebars));
     let shared_ast = std::sync::Arc::new(ast);

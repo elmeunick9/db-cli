@@ -228,6 +228,33 @@ pub async fn list_columns(
     }
 }
 
+/// Return the contents of a table as JSON objects.
+pub async fn query_table(
+    pool: &DbPool,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<serde_json::Value>, sqlx::Error> {
+    match pool {
+        DbPool::Postgres(p) => {
+            let query = format!(
+                "SELECT row_to_json(row) FROM (SELECT * FROM {}.{}) AS row",
+                format!("\"{}\"", schema.replace('"', "\"\"")),
+                format!("\"{}\"", table.replace('"', "\"\"")),
+            );
+
+            sqlx::query_scalar(&query).fetch_all(p).await
+        }
+        DbPool::MySql(_) => Err(sqlx::Error::Configuration(Box::new(io::Error::new(
+            io::ErrorKind::Other,
+            "table queries currently only support Postgres",
+        )))),
+        DbPool::DryRun => Err(sqlx::Error::Configuration(Box::new(io::Error::new(
+            io::ErrorKind::Other,
+            "querying a table requires a real Postgres pool",
+        )))),
+    }
+}
+
 pub async fn list_enums(pool: &DbPool, schema: &str) -> Result<Vec<EnumInfo>, sqlx::Error> {
     match pool {
         DbPool::Postgres(p) => {

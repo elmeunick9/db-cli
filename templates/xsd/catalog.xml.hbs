@@ -5,4 +5,8 @@
   <uri name="urn:db:{{../schema}}:{{name}}" uri="{{../schema}}/{{name}}.xsd" />
 {{/each}}
 {{/each}}
+
+{{#each users}}
+  <!--db:auth:user:{{id}} email="{{email}}" -->
+{{/each}}
 </catalog>
