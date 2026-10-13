@@ -79,7 +79,7 @@ pub async fn execute(config: &Config, version: Option<String>) -> Result<(), Box
         let file = &block.file;
         if file.ends_with("schema.sql") || file.ends_with(".table.sql") || file.ends_with(".function.sql") || file.ends_with(".view.sql") {
             layers[0].push(block.clone());
-        } else if file.ends_with(".trigger.sql") || file.ends_with(".index.sql") {
+        } else if file.ends_with(".trigger.sql") || file.ends_with(".cron.sql") || file.ends_with(".index.sql") {
             layers[1].push(block.clone());
         } else if file.ends_with("insert.sql") || file.ends_with(".insert.sql") {
             layers[2].push(block.clone());
